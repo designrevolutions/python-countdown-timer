@@ -1,0 +1,79 @@
+FUTURE ENHANCEMENTS
+===================
+
+DISTRIBUTION
+------------
+- Rename timer.py to timer.pyw so double-clicking it launches the timer with no
+  black console window appearing alongside it.
+
+- Use PyInstaller to bundle the app into a single timer.exe that runs on any
+  Windows machine with no Python installation required:
+    pip install pyinstaller
+    pyinstaller --onefile --noconsole timer.py
+  The resulting exe is in the dist\ folder. Keep your alarm sound file alongside
+  it and point ALARM_SOUND_FILE at it.
+
+- Add a desktop shortcut or pin timer.pyw / timer.exe to the taskbar for
+  one-click launch.
+
+
+AUDIO
+-----
+- Install pygame (pip install pygame) for reliable .wav and .mp3 alarm support.
+  Point ALARM_SOUND_FILE in the settings block at your chosen sound file.
+
+- Add a looping alarm option — currently the alarm plays once; a loop with a
+  manual dismiss button would be useful for loud environments.
+
+- Add a gentle audio warning cue when the WARNING_THRESHOLD_SECONDS is reached,
+  separate from the final alarm.
+
+
+UI / USABILITY
+--------------
+- Add an on-screen duration picker so you can set hours / minutes / seconds
+  without editing the source file each time.
+
+- Support multiple saved presets (e.g. "Pomodoro 25min", "Meeting 45min",
+  "Break 5min") selectable from a dropdown.
+
+- Add a count-up stopwatch mode alongside the countdown mode.
+
+- Add an optional large message label below the timer (e.g. "LUNCH BREAK")
+  configurable in the settings block — useful when projecting on a screen.
+
+- Show a Windows system tray icon so the app is always accessible even when
+  the window is minimised or behind other windows.
+
+- Remember the last window position and size between runs (save to a small
+  config file, restore on next launch).
+
+- Add a progress bar or circular arc that visually drains as time runs out.
+
+
+SETTINGS / CONFIGURATION
+------------------------
+- Move settings into a separate timer_config.json or timer_config.ini file so
+  you can change them without touching the Python source code.
+
+- Add an in-app settings panel (a small popup) to change colours, duration, and
+  font without reopening the file in an editor.
+
+- Support multiple colour themes selectable at runtime (e.g. dark, light,
+  high-contrast).
+
+
+MULTI-MONITOR
+-------------
+- Add Previous Monitor / Next Monitor buttons to the UI that programmatically
+  move the window across screens — a workaround for Shift+Win+Arrow not working
+  when the transparent/overrideredirect mode is active.
+
+
+CODE QUALITY
+------------
+- Add a requirements.txt with pygame pinned once you settle on a version, so
+  reinstalling dependencies is a single "pip install -r requirements.txt".
+
+- Write a brief test script that checks the _fmt() time-formatting function and
+  the settings defaults, to catch regressions if the code is edited.
