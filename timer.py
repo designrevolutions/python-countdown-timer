@@ -107,7 +107,7 @@ WARNING_THRESHOLD_SECONDS = 60
 #   macOS   — uses the -transparent attribute; the OS handles compositing.
 #   Linux   — requires a compositing window manager (e.g. Picom).  If the WM
 #             does not support it the setting is silently ignored.
-TRANSPARENT_BACKGROUND = False
+TRANSPARENT_BACKGROUND = True
 
 # ── Alarm ─────────────────────────────────────────────────────────────────────
 
@@ -153,10 +153,11 @@ class CountdownTimer(tk.Tk):
         self._total: int = COUNTDOWN_MINUTES * 60 + COUNTDOWN_SECONDS
         self._left:  int = self._total   # seconds currently shown
 
-        self._running    = False
-        self._fullscreen = False
-        self._flashing   = False
-        self._flash_on   = False
+        self._running         = False
+        self._fullscreen      = False
+        self._flashing        = False
+        self._flash_on        = False
+        self._transparency_on = False  # toggled by _apply_transparency / _toggle_bg
 
         # Wall-clock anchors used for drift-free timing
         self._anchor_mono:  float = 0.0  # time.monotonic() when (re)started
@@ -235,6 +236,23 @@ class CountdownTimer(tk.Tk):
 
         for btn in (self._btn_fs, self._btn_start, self._btn_reset):
             btn.pack(side=tk.LEFT, padx=6)
+
+        # Extra buttons only present when transparent mode is active on Windows,
+        # because overrideredirect removes the system title bar and taskbar entry.
+        if TRANSPARENT_BACKGROUND and platform.system() == "Windows":
+            # Toggle lets the user temporarily make the window solid so they can
+            # move it with Shift+Win+Arrow or alt-tab, then re-enable transparency.
+            self._btn_trans = tk.Button(
+                inner, text="Show BG",
+                command=self._toggle_bg, **_btn_kw,
+            )
+            self._btn_trans.pack(side=tk.LEFT, padx=6)
+
+            self._btn_close = tk.Button(
+                inner, text="✕", command=self.destroy,
+                **{**_btn_kw, "padx": 12, "fg": "#ff6b6b"},
+            )
+            self._btn_close.pack(side=tk.LEFT, padx=6)
 
     # ── Formatting helper ─────────────────────────────────────────────────────
 
@@ -351,17 +369,28 @@ class CountdownTimer(tk.Tk):
             self._enter_fullscreen()
 
     def _enter_fullscreen(self) -> None:
-        """Switch to borderless fullscreen; hides the title bar."""
+        """Switch to borderless fullscreen."""
         self._fullscreen = True
-        self.attributes("-fullscreen", True)
+        if TRANSPARENT_BACKGROUND and platform.system() == "Windows":
+            # overrideredirect conflicts with -fullscreen at the WinAPI level;
+            # manually stretch the window to cover the screen instead.
+            self._pre_fs_geometry = self.geometry()
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            self.geometry(f"{sw}x{sh}+0+0")
+        else:
+            self.attributes("-fullscreen", True)
         self._btn_fs.configure(text="Windowed")
 
     def _exit_fullscreen(self) -> None:
-        """Restore the normal windowed title bar."""
+        """Restore windowed size."""
         if not self._fullscreen:
             return
         self._fullscreen = False
-        self.attributes("-fullscreen", False)
+        if TRANSPARENT_BACKGROUND and platform.system() == "Windows":
+            self.geometry(getattr(self, "_pre_fs_geometry", "800x520"))
+        else:
+            self.attributes("-fullscreen", False)
         self._btn_fs.configure(text="Fullscreen")
 
     # ── Time's Up ─────────────────────────────────────────────────────────────
@@ -400,8 +429,20 @@ class CountdownTimer(tk.Tk):
     def _apply_transparency(self) -> None:
         system = platform.system()
         if system == "Windows":
-            # All pixels whose colour exactly matches BACKGROUND_COLOR become
-            # see-through.  Works correctly once the window is mapped.
+            # Remove the system title bar.  Without this, -transparentcolor makes
+            # the title bar (also black by default) click-through, so the window
+            # can't be moved or closed.  We replace it with drag bindings and a
+            # close button added in _build_ui.
+            self._transparency_on = True
+            self.overrideredirect(True)
+            # overrideredirect removes the window from the taskbar, so force
+            # topmost so it can't disappear behind other windows.
+            self.attributes("-topmost", True)
+            self._drag_offset_x = 0
+            self._drag_offset_y = 0
+            self.bind("<Button-1>",  self._on_drag_start)
+            self.bind("<B1-Motion>", self._on_drag_move)
+            self.bind("<Alt-F4>",    lambda _: self.destroy())
             self.wm_attributes("-transparentcolor", BACKGROUND_COLOR)
         elif system == "Darwin":
             self.wm_attributes("-transparent", True)
@@ -411,6 +452,46 @@ class CountdownTimer(tk.Tk):
                 btn.configure(bg="systemTransparent")
         # Linux: silently skipped; user must configure their compositing WM
         # (e.g. add `blur-background = true;` to picom.conf).
+
+    def _toggle_bg(self) -> None:
+        if self._transparency_on:
+            self._disable_transparency()
+        else:
+            self._enable_transparency()
+
+    def _disable_transparency(self) -> None:
+        """Make the window solid so Shift+Win+Arrow and alt-tab work normally."""
+        self._transparency_on = False
+        self._btn_trans.configure(text="Hide BG")
+        self.withdraw()
+        self.overrideredirect(False)
+        self.title("Countdown Timer")
+        self.attributes("-topmost", ALWAYS_ON_TOP)
+        # Set transparent colour to something that won't match any UI pixel,
+        # effectively disabling chroma-key transparency without unsetting it.
+        self.wm_attributes("-transparentcolor", "#FEFEFE")
+        self.deiconify()
+
+    def _enable_transparency(self) -> None:
+        """Restore the transparent floating overlay."""
+        self._transparency_on = True
+        self._btn_trans.configure(text="Show BG")
+        self.withdraw()
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.wm_attributes("-transparentcolor", BACKGROUND_COLOR)
+        self.deiconify()
+
+    def _on_drag_start(self, event: tk.Event) -> None:
+        """Record where inside the window the user clicked, for drag-to-move."""
+        self._drag_offset_x = event.x_root - self.winfo_x()
+        self._drag_offset_y = event.y_root - self.winfo_y()
+
+    def _on_drag_move(self, event: tk.Event) -> None:
+        """Reposition the window to follow the mouse while Button-1 is held."""
+        if self._fullscreen:
+            return
+        self.geometry(f"+{event.x_root - self._drag_offset_x}+{event.y_root - self._drag_offset_y}")
 
     # ── Alarm sound ───────────────────────────────────────────────────────────
 
