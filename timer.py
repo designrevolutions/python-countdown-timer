@@ -1,0 +1,485 @@
+# =============================================================================
+#  SETUP INSTRUCTIONS
+# =============================================================================
+#
+#  Python version recommended: 3.10 or newer
+#  All core features use the standard library only.
+#
+#  1. Create a virtual environment
+#       python -m venv venv
+#
+#  2. Activate it
+#       Windows:      venv\Scripts\activate
+#       macOS/Linux:  source venv/bin/activate
+#
+#  3. Install optional dependency (only needed for .wav/.mp3 alarm files)
+#
+#       Recommended (best cross-platform audio support):
+#         pip install pygame
+#
+#       Lightweight alternative (.wav only; known issues on Python 3.10+):
+#         pip install playsound
+#
+#       If you only want the built-in system beep, skip step 3 entirely.
+#
+#  4. Run the timer
+#       python timer.py
+#
+#  ── requirements.txt (copy this block into a file named requirements.txt) ─
+#
+#     # Uncomment one line to enable alarm sound-file support:
+#     # pygame>=2.5.0          # recommended — .wav and .mp3, all platforms
+#     # playsound>=1.3.0       # alternative — .wav only, less reliable on 3.10+
+#
+#  ─────────────────────────────────────────────────────────────────────────
+#
+#  Keyboard shortcuts (when window is focused):
+#    Escape  — exit fullscreen
+#    Space   — start / pause / resume
+#    R       — reset
+#
+# =============================================================================
+
+import os
+import sys
+import time
+import platform
+import threading
+import tkinter as tk
+from tkinter import font as tkfont
+
+# ── Optional audio back-ends (soft dependencies) ─────────────────────────────
+try:
+    import pygame as _pygame
+    _PYGAME = True
+except ImportError:
+    _PYGAME = False
+
+try:
+    from playsound import playsound as _playsound
+    _PLAYSOUND = True
+except ImportError:
+    _PLAYSOUND = False
+
+
+# =============================================================================
+#  SETTINGS  —  edit this block to configure the timer
+# =============================================================================
+
+# ── Duration ──────────────────────────────────────────────────────────────────
+
+# Starting countdown value; COUNTDOWN_MINUTES may exceed 59 (e.g. 90 for 1h30m)
+COUNTDOWN_MINUTES = 45
+COUNTDOWN_SECONDS = 0
+
+# ── Typography ────────────────────────────────────────────────────────────────
+
+# Font family for the timer digits and control buttons
+FONT_FAMILY = "Helvetica"
+
+# Timer digit size.
+#   None  → auto-scales to fill the window; updates on every resize.
+#   int   → fixed size (e.g. 120); window size has no effect on digit size.
+FONT_SIZE = None
+
+# ── Colours ───────────────────────────────────────────────────────────────────
+
+# Colour of the countdown digits during normal operation
+TEXT_COLOR = "#FFFFFF"
+
+# Window background colour
+BACKGROUND_COLOR = "#000000"
+
+# Colour the digits turn when remaining seconds fall below the warning threshold
+WARNING_COLOR = "#FF4444"
+
+# Seconds at which the warning colour activates (e.g. 60 = last minute)
+WARNING_THRESHOLD_SECONDS = 60
+
+# ── Window transparency ───────────────────────────────────────────────────────
+# When True, attempts to make BACKGROUND_COLOR pixels transparent so the
+# desktop shows through.
+#
+#   Windows — uses -transparentcolor.  Every pixel that exactly matches
+#             BACKGROUND_COLOR becomes transparent, including any fringe pixels
+#             from text anti-aliasing.  Tip: use a slightly non-black colour
+#             such as "#010101" so pure-black text edges remain visible.
+#   macOS   — uses the -transparent attribute; the OS handles compositing.
+#   Linux   — requires a compositing window manager (e.g. Picom).  If the WM
+#             does not support it the setting is silently ignored.
+TRANSPARENT_BACKGROUND = False
+
+# ── Alarm ─────────────────────────────────────────────────────────────────────
+
+# Path to an audio file played when the countdown reaches zero.
+# Leave as "" to skip file playback and fall back to the platform system beep.
+# Absolute paths are safest; relative paths are resolved from the working dir.
+#   Examples:
+#     Windows  →  r"C:\Users\you\sounds\alarm.wav"
+#     macOS    →  "/Users/you/sounds/alarm.wav"
+ALARM_SOUND_FILE = ""
+
+# How long (seconds) to keep the alarm file playing before stopping it.
+# Has no effect on the system-beep fallback, which has its own fixed duration.
+ALARM_DURATION_SECONDS = 3
+
+# ── Buttons ───────────────────────────────────────────────────────────────────
+
+# Font size used by the Fullscreen / Start / Reset buttons
+BUTTON_FONT_SIZE = 14
+
+# ── Window behaviour ─────────────────────────────────────────────────────────
+
+# Keep the timer window on top of all other application windows
+ALWAYS_ON_TOP = False
+
+# =============================================================================
+
+
+class CountdownTimer(tk.Tk):
+    """Single-window countdown timer with dynamic font scaling."""
+
+    # ms to wait after the last resize event before recalculating font size;
+    # prevents thrashing while the user is actively dragging the window edge
+    _RESIZE_DEBOUNCE_MS = 60
+
+    # Polling interval (ms) for the wall-clock tick; small enough that the
+    # display never lags more than this behind the actual second boundary
+    _TICK_INTERVAL_MS = 100
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._total: int = COUNTDOWN_MINUTES * 60 + COUNTDOWN_SECONDS
+        self._left:  int = self._total   # seconds currently shown
+
+        self._running    = False
+        self._fullscreen = False
+        self._flashing   = False
+        self._flash_on   = False
+
+        # Wall-clock anchors used for drift-free timing
+        self._anchor_mono:  float = 0.0  # time.monotonic() when (re)started
+        self._anchor_left:  int   = 0    # self._left at that moment
+
+        # tkinter after() handle IDs — None means not currently scheduled
+        self._tick_id:   int | None = None
+        self._flash_id:  int | None = None
+        self._resize_id: int | None = None
+
+        self._setup_window()
+        self._build_ui()
+
+        if TRANSPARENT_BACKGROUND:
+            self._apply_transparency()
+
+        self.bind("<Configure>", self._on_configure)
+        self.bind("<Escape>",    lambda _e: self._exit_fullscreen())
+        self.bind("<space>",     lambda _e: self._toggle_pause())
+        self.bind("r",           lambda _e: self._reset())
+        self.bind("R",           lambda _e: self._reset())
+
+        self._refresh_label()
+
+    # ── Window setup ──────────────────────────────────────────────────────────
+
+    def _setup_window(self) -> None:
+        self.title("Countdown Timer")
+        self.configure(bg=BACKGROUND_COLOR)
+        self.attributes("-topmost", ALWAYS_ON_TOP)
+        self.geometry("800x520")
+        self.minsize(320, 220)
+
+    # ── UI construction ───────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        # Timer display — expands to fill all available vertical space
+        self._canvas = tk.Frame(self, bg=BACKGROUND_COLOR)
+        self._canvas.pack(fill=tk.BOTH, expand=True)
+
+        self._label = tk.Label(
+            self._canvas,
+            text=self._fmt(self._left),
+            font=(FONT_FAMILY, FONT_SIZE or 72),
+            fg=TEXT_COLOR,
+            bg=BACKGROUND_COLOR,
+            anchor="center",
+        )
+        self._label.pack(fill=tk.BOTH, expand=True)
+
+        # Button row — sits below the timer label
+        bar = tk.Frame(self, bg=BACKGROUND_COLOR)
+        bar.pack(fill=tk.X, pady=(0, 14))
+        self._bar = bar  # keep a reference for transparency
+
+        # Inner frame so buttons are centred regardless of window width
+        inner = tk.Frame(bar, bg=BACKGROUND_COLOR)
+        self._inner = inner
+        inner.pack()  # default anchor=CENTER centres it horizontally
+
+        _btn_kw = dict(
+            font=(FONT_FAMILY, BUTTON_FONT_SIZE),
+            bg="#2d2d2d",
+            fg="#eeeeee",
+            activebackground="#505050",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=20,
+            pady=7,
+            cursor="hand2",
+            bd=0,
+        )
+        self._btn_fs    = tk.Button(inner, text="Fullscreen", command=self._toggle_fullscreen, **_btn_kw)
+        self._btn_start = tk.Button(inner, text="Start",      command=self._toggle_pause,      **_btn_kw)
+        self._btn_reset = tk.Button(inner, text="Reset",      command=self._reset,             **_btn_kw)
+
+        for btn in (self._btn_fs, self._btn_start, self._btn_reset):
+            btn.pack(side=tk.LEFT, padx=6)
+
+    # ── Formatting helper ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _fmt(seconds: int) -> str:
+        """Return HH:MM:SS when hours > 0, else MM:SS."""
+        seconds = max(0, int(seconds))
+        h, r = divmod(seconds, 3600)
+        m, s = divmod(r, 60)
+        return f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+    def _digit_color(self) -> str:
+        if 0 < self._left <= WARNING_THRESHOLD_SECONDS:
+            return WARNING_COLOR
+        return TEXT_COLOR
+
+    # ── Font scaling ──────────────────────────────────────────────────────────
+
+    def _on_configure(self, event: tk.Event) -> None:
+        """Debounce resize events before recalculating font size."""
+        if event.widget is not self:
+            return
+        if self._resize_id is not None:
+            self.after_cancel(self._resize_id)
+        self._resize_id = self.after(self._RESIZE_DEBOUNCE_MS, self._scale_font)
+
+    def _scale_font(self) -> None:
+        """Binary-search for the largest font that fits inside the canvas."""
+        self._resize_id = None
+        if FONT_SIZE is not None:
+            return  # user has pinned the size; nothing to do
+
+        text = self._label.cget("text")
+        w    = self._canvas.winfo_width()
+        h    = self._canvas.winfo_height()
+        if w < 30 or h < 30:
+            return  # window not yet drawn
+
+        # Search space: 8 pt up to the larger canvas dimension (generous ceiling)
+        lo, hi, best = 8, max(w, h), 8
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            f   = tkfont.Font(family=FONT_FAMILY, size=mid)
+            fits = f.measure(text) <= w * 0.92 and f.metrics("linespace") <= h * 0.85
+            if fits:
+                best = mid
+                lo   = mid + 1
+            else:
+                hi   = mid - 1
+
+        self._label.configure(font=(FONT_FAMILY, best))
+
+    # ── Countdown tick (wall-clock based to avoid drift) ─────────────────────
+
+    def _tick(self) -> None:
+        if not self._running:
+            return
+        elapsed      = time.monotonic() - self._anchor_mono
+        self._left   = max(0, self._anchor_left - int(elapsed))
+        self._refresh_label()
+        if self._left > 0:
+            self._tick_id = self.after(self._TICK_INTERVAL_MS, self._tick)
+        else:
+            self._running = False
+            self._time_up()
+
+    def _refresh_label(self) -> None:
+        """Update the timer label text and colour."""
+        self._label.configure(
+            text=self._fmt(self._left),
+            fg=self._digit_color(),
+            bg=BACKGROUND_COLOR,
+        )
+        self._scale_font()
+
+    # ── Controls ─────────────────────────────────────────────────────────────
+
+    def _toggle_pause(self) -> None:
+        """Start → Pause → Resume cycle."""
+        if self._left == 0:
+            return
+        if self._running:
+            # Pause: freeze the remaining-seconds snapshot
+            self._running = False
+            if self._tick_id is not None:
+                self.after_cancel(self._tick_id)
+                self._tick_id = None
+            self._btn_start.configure(text="Resume")
+        else:
+            # Start or Resume: anchor wall-clock to current remaining seconds
+            self._running          = True
+            self._anchor_mono      = time.monotonic()
+            self._anchor_left      = self._left
+            self._btn_start.configure(text="Pause")
+            self._tick()
+
+    def _reset(self) -> None:
+        """Stop the timer, cancel any animation, and restore the original time."""
+        self._running = False
+        if self._tick_id is not None:
+            self.after_cancel(self._tick_id)
+            self._tick_id = None
+        self._stop_flash()
+        self._left = self._total
+        self._btn_start.configure(text="Start", state=tk.NORMAL)
+        self._refresh_label()
+
+    # ── Fullscreen toggle ─────────────────────────────────────────────────────
+
+    def _toggle_fullscreen(self) -> None:
+        if self._fullscreen:
+            self._exit_fullscreen()
+        else:
+            self._enter_fullscreen()
+
+    def _enter_fullscreen(self) -> None:
+        """Switch to borderless fullscreen; hides the title bar."""
+        self._fullscreen = True
+        self.attributes("-fullscreen", True)
+        self._btn_fs.configure(text="Windowed")
+
+    def _exit_fullscreen(self) -> None:
+        """Restore the normal windowed title bar."""
+        if not self._fullscreen:
+            return
+        self._fullscreen = False
+        self.attributes("-fullscreen", False)
+        self._btn_fs.configure(text="Fullscreen")
+
+    # ── Time's Up ─────────────────────────────────────────────────────────────
+
+    def _time_up(self) -> None:
+        self._label.configure(text="Time's Up!", fg=WARNING_COLOR)
+        self._scale_font()                          # rescale for new text length
+        self._btn_start.configure(state=tk.DISABLED)
+        self._start_flash()
+        threading.Thread(target=self._play_alarm, daemon=True).start()
+
+    # ── Flash animation ───────────────────────────────────────────────────────
+
+    def _start_flash(self) -> None:
+        self._flashing = True
+        self._flash_on = False
+        self._flash_cycle()
+
+    def _flash_cycle(self) -> None:
+        if not self._flashing:
+            return
+        self._flash_on = not self._flash_on
+        self._label.configure(fg=WARNING_COLOR if self._flash_on else BACKGROUND_COLOR)
+        self._flash_id = self.after(500, self._flash_cycle)
+
+    def _stop_flash(self) -> None:
+        self._flashing = False
+        if self._flash_id is not None:
+            self.after_cancel(self._flash_id)
+            self._flash_id = None
+        # Restore colours so _refresh_label starts from a clean state
+        self._label.configure(fg=TEXT_COLOR, bg=BACKGROUND_COLOR)
+
+    # ── Transparency ─────────────────────────────────────────────────────────
+
+    def _apply_transparency(self) -> None:
+        system = platform.system()
+        if system == "Windows":
+            # All pixels whose colour exactly matches BACKGROUND_COLOR become
+            # see-through.  Works correctly once the window is mapped.
+            self.wm_attributes("-transparentcolor", BACKGROUND_COLOR)
+        elif system == "Darwin":
+            self.wm_attributes("-transparent", True)
+            for widget in (self, self._canvas, self._label, self._bar, self._inner):
+                widget.configure(bg="systemTransparent")
+            for btn in (self._btn_fs, self._btn_start, self._btn_reset):
+                btn.configure(bg="systemTransparent")
+        # Linux: silently skipped; user must configure their compositing WM
+        # (e.g. add `blur-background = true;` to picom.conf).
+
+    # ── Alarm sound ───────────────────────────────────────────────────────────
+
+    def _play_alarm(self) -> None:
+        """Play the alarm.  Runs in a daemon thread so the UI stays responsive."""
+        path     = (ALARM_SOUND_FILE or "").strip()
+        duration = max(0, ALARM_DURATION_SECONDS)
+
+        if path and os.path.isfile(path):
+            # ── pygame: best cross-platform choice for .wav and .mp3 ──────────
+            if _PYGAME:
+                try:
+                    _pygame.mixer.init()
+                    _pygame.mixer.music.load(path)
+                    _pygame.mixer.music.play()
+                    time.sleep(duration)
+                    _pygame.mixer.music.stop()
+                    return
+                except Exception:
+                    pass  # fall through to next back-end
+
+            # ── playsound: simpler, .wav only, less reliable on 3.10+ ─────────
+            if _PLAYSOUND:
+                try:
+                    _playsound(path)
+                    return
+                except Exception:
+                    pass  # fall through
+
+            # ── winsound: Windows stdlib, .wav only ───────────────────────────
+            if platform.system() == "Windows":
+                try:
+                    import winsound
+                    winsound.PlaySound(
+                        path,
+                        winsound.SND_FILENAME | winsound.SND_ASYNC,
+                    )
+                    time.sleep(duration)
+                    winsound.PlaySound(None, winsound.SND_PURGE)
+                    return
+                except Exception:
+                    pass  # fall through to system beep
+
+        # ── System beep fallback (no external dependencies) ───────────────────
+        system = platform.system()
+        if system == "Windows":
+            try:
+                import winsound
+                for _ in range(3):
+                    winsound.Beep(1000, 400)
+                    time.sleep(0.15)
+            except Exception:
+                pass
+        elif system == "Darwin":
+            # afplay ships with every macOS installation
+            os.system("afplay /System/Library/Sounds/Glass.aiff 2>/dev/null")
+        else:
+            # Linux: try sox; fall back to the terminal bell character
+            played = os.system("play -n -d synth 0.5 sin 880 2>/dev/null") == 0
+            if not played:
+                sys.stdout.write("\a")
+                sys.stdout.flush()
+
+
+# =============================================================================
+
+if __name__ == "__main__":
+    if _PYGAME:
+        _pygame.init()
+
+    app = CountdownTimer()
+    app.mainloop()
