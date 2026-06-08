@@ -3,7 +3,7 @@
 # =============================================================================
 #
 #  Python version recommended: 3.10 or newer
-#  All core features use the standard library only.
+#  All core features use the standard library only (no pip install required).
 #
 #  1. Create a virtual environment
 #       python -m venv venv
@@ -23,7 +23,45 @@
 #       If you only want the built-in system beep, skip step 3 entirely.
 #
 #  4. Run the timer
-#       python timer.py
+#
+#       Basic launch (shows a console window alongside the timer):
+#         python timer.py
+#
+#       Clean launch on Windows (no console window, GUI only):
+#         pythonw timer.py
+#
+#       Pass --help to see all available options:
+#         python timer.py --help
+#
+#  ── Command-line examples ─────────────────────────────────────────────────
+#
+#    Set the timer to 25 minutes:
+#      python timer.py --time 25
+#
+#    Set 45 minutes and 30 seconds:
+#      python timer.py --time 45 --seconds 30
+#
+#    Decimals work too (1.5 = 1 min 30 sec):
+#      python timer.py --time 1.5
+#
+#    Custom colours:
+#      python timer.py --time 10 --bg "#1a1a2e" --fg "#e94560"
+#
+#    Custom font and size:
+#      python timer.py --time 5 --font "Courier New" --font-size 120
+#
+#    Boolean flags — just add them, no value needed:
+#      python timer.py --time 25 --top               # always on top
+#      python timer.py --time 25 --fullscreen        # start fullscreen
+#      python timer.py --time 25 --transparent       # transparent background
+#
+#    Point at an alarm sound file:
+#      python timer.py --time 20 --alarm "C:\sounds\alarm.wav"
+#
+#    Combine anything:
+#      pythonw timer.py --time 25 --top --fullscreen --bg "#000000"
+#
+#    Note: any argument not supplied falls back to the SETTINGS block below.
 #
 #  ── requirements.txt (copy this block into a file named requirements.txt) ─
 #
@@ -34,9 +72,9 @@
 #  ─────────────────────────────────────────────────────────────────────────
 #
 #  Keyboard shortcuts (when window is focused):
-#    Escape  — exit fullscreen
 #    Space   — start / pause / resume
 #    R       — reset
+#    Escape  — exit fullscreen
 #
 # =============================================================================
 
@@ -94,8 +132,8 @@ BACKGROUND_COLOR = "#000000"
 # Colour the digits turn when remaining seconds fall below the warning threshold
 WARNING_COLOR = "#FF4444"
 
-# Seconds at which the warning colour activates (e.g. 60 = last minute)
-WARNING_THRESHOLD_SECONDS = 60
+# Seconds at which the warning colour activates (e.g. 120 = last 2 minutes)
+WARNING_THRESHOLD_SECONDS = 120
 
 # ── Window transparency ───────────────────────────────────────────────────────
 # When True, attempts to make BACKGROUND_COLOR pixels transparent so the
@@ -122,7 +160,7 @@ ALARM_SOUND_FILE = ""
 
 # How long (seconds) to keep the alarm file playing before stopping it.
 # Has no effect on the system-beep fallback, which has its own fixed duration.
-ALARM_DURATION_SECONDS = 3
+ALARM_DURATION_SECONDS = 30
 
 # ── Buttons ───────────────────────────────────────────────────────────────────
 
@@ -172,11 +210,12 @@ class CountdownTimer(tk.Tk):
         self._flash_id:  int | None = None
         self._resize_id: int | None = None
 
-        self._setup_window()
-        self._build_ui()
+        self._setup_window() # This fn is there to configure the window title, size, and always-on-top behaviour
+        self._build_ui() # This fn is there to create and arrange the timer label and control buttons
+        # These 2 fns are just standard tkinter setup. This is standard boilerplate code for creating a tkinter application window and adding widgets to it.
 
         if TRANSPARENT_BACKGROUND:
-            self._apply_transparency()
+            self._apply_transparency() # This fn is there to set up the window transparency based on the TRANSPARENT_BACKGROUND setting and the platform. It uses different methods for Windows, macOS, and Linux.
 
         self.bind("<Configure>", self._on_configure)
         self.bind("<Escape>",    lambda _e: self._exit_fullscreen())
@@ -451,7 +490,7 @@ class CountdownTimer(tk.Tk):
             self.bind("<B1-Motion>", self._on_drag_move)
             self.bind("<Alt-F4>",    lambda _: self.destroy())
             self.wm_attributes("-transparentcolor", BACKGROUND_COLOR)
-        elif system == "Darwin":
+        elif system == "Darwin": # This is for macOS, which identifies as "Darwin"
             self.wm_attributes("-transparent", True)
             for widget in (self, self._canvas, self._label, self._bar, self._inner):
                 widget.configure(bg="systemTransparent")
