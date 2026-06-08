@@ -1,6 +1,10 @@
 FUTURE ENHANCEMENTS
 ===================
 
+Allow the user to input the time - use simple TK interface to take input - maybe have a button labelled 'Edit Time'
+
+The defaukt time works - without the Pythiongame or the other one... but how do I make the alarm repeat for upto 1 minute?
+
 DISTRIBUTION
 ------------
 - Rename timer.py to timer.pyw so double-clicking it launches the timer with no
