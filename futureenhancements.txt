@@ -14,6 +14,9 @@ Add ability to write merssages - connect to AI who knows what you are trying to 
 
 Connect to calendar and have you busy when the timer is counting down.
 
+CRAZY idea: you start off with a morning scene, this changes to night time - when the moon is up fully and visible, you get the alarm go off. The picture changes and transitions and moves slightly (slightly - so not to disturb the person working).
+
+
 DISTRIBUTION
 ------------
 - Rename timer.py to timer.pyw so double-clicking it launches the timer with no
