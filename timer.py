@@ -40,6 +40,7 @@
 #
 # =============================================================================
 
+import argparse
 import os
 import sys
 import time
@@ -133,6 +134,9 @@ BUTTON_FONT_SIZE = 14
 # Keep the timer window on top of all other application windows
 ALWAYS_ON_TOP = False
 
+# Start in fullscreen immediately on launch
+START_FULLSCREEN = False
+
 # =============================================================================
 
 
@@ -181,6 +185,9 @@ class CountdownTimer(tk.Tk):
         self.bind("R",           lambda _e: self._reset())
 
         self._refresh_label()
+
+        if START_FULLSCREEN:
+            self.after(200, self._enter_fullscreen)
 
     # ── Window setup ──────────────────────────────────────────────────────────
 
@@ -558,7 +565,88 @@ class CountdownTimer(tk.Tk):
 
 # =============================================================================
 
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        prog="timer",
+        description="Countdown timer. Command-line values override the SETTINGS block.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  py timer.py --time 25\n"
+            "  py timer.py --time 1.5                 # 1 min 30 sec\n"
+            "  py timer.py --time 45 -s 30            # 45 min 30 sec\n"
+            '  py timer.py --time 10 --bg "#1a1a2e" --fg "#e94560"\n'
+            '  py timer.py --time 5  --font "Courier New" --font-size 120\n'
+            "  py timer.py --time 25 --top --fullscreen\n"
+            "  py timer.py --time 20 --alarm alarm.wav\n"
+        ),
+    )
+
+    # ── Duration ──────────────────────────────────────────────────────────────
+    p.add_argument(
+        "-t", "--time", type=float, default=None, metavar="MINS",
+        help="duration in minutes; decimals allowed (e.g. 1.5 = 1m30s). "
+             "Default: COUNTDOWN_MINUTES setting.",
+    )
+    p.add_argument(
+        "-s", "--seconds", type=int, default=None, metavar="S",
+        help="extra seconds added on top of --time",
+    )
+
+    # ── Appearance ────────────────────────────────────────────────────────────
+    a = p.add_argument_group("appearance")
+    a.add_argument("--bg",  metavar="HEX", help='background colour  e.g. "#000000"')
+    a.add_argument("--fg",  metavar="HEX", help='digit colour  e.g. "#FFFFFF"')
+    a.add_argument(
+        "--warning-color", metavar="HEX",
+        help='colour used during the final warning period  e.g. "#FF4444"',
+    )
+    a.add_argument(
+        "--warning", type=int, metavar="SECS",
+        help="seconds remaining when the warning colour activates",
+    )
+    a.add_argument("--font",      metavar="NAME", help='font family  e.g. "Courier New"')
+    a.add_argument("--font-size", type=int, metavar="PT",
+                   help="lock digit size in points; omit to auto-scale")
+
+    # ── Behaviour ─────────────────────────────────────────────────────────────
+    b = p.add_argument_group("behaviour")
+    b.add_argument("--alarm",       metavar="FILE", help="path to alarm sound file (.wav)")
+    b.add_argument("--top",         action="store_true", help="keep window on top")
+    b.add_argument("--fullscreen",  action="store_true", help="start in fullscreen")
+    b.add_argument("--transparent", action="store_true", help="transparent background")
+
+    return p.parse_args()
+
+
+def _apply_args(args: argparse.Namespace) -> None:
+    """Override module-level SETTINGS with values supplied on the command line."""
+    global COUNTDOWN_MINUTES, COUNTDOWN_SECONDS
+    global FONT_FAMILY, FONT_SIZE
+    global TEXT_COLOR, BACKGROUND_COLOR, WARNING_COLOR, WARNING_THRESHOLD_SECONDS
+    global ALWAYS_ON_TOP, START_FULLSCREEN, TRANSPARENT_BACKGROUND, ALARM_SOUND_FILE
+
+    if args.time is not None or args.seconds is not None:
+        total = int(round((args.time or 0) * 60)) + (args.seconds or 0)
+        COUNTDOWN_MINUTES = total // 60
+        COUNTDOWN_SECONDS = total % 60
+
+    if args.bg            is not None: BACKGROUND_COLOR          = args.bg
+    if args.fg            is not None: TEXT_COLOR                = args.fg
+    if args.warning_color is not None: WARNING_COLOR             = args.warning_color
+    if args.warning       is not None: WARNING_THRESHOLD_SECONDS = args.warning
+    if args.font          is not None: FONT_FAMILY               = args.font
+    if args.font_size     is not None: FONT_SIZE                 = args.font_size
+    if args.alarm         is not None: ALARM_SOUND_FILE          = args.alarm
+    if args.top:                       ALWAYS_ON_TOP             = True
+    if args.fullscreen:                START_FULLSCREEN          = True
+    if args.transparent:               TRANSPARENT_BACKGROUND    = True
+
+
 if __name__ == "__main__":
+    _apply_args(_parse_args())
+
     if _PYGAME:
         _pygame.init()
 
