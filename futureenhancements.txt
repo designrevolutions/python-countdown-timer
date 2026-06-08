@@ -3,7 +3,16 @@ FUTURE ENHANCEMENTS
 
 Allow the user to input the time - use simple TK interface to take input - maybe have a button labelled 'Edit Time'
 
-The defaukt time works - without the Pythiongame or the other one... but how do I make the alarm repeat for upto 1 minute?
+The default time works - without the Pythiongame or the other one... but how do I make the alarm repeat for upto 1 minute?
+
+Add ability to add background pics
+Add ability to pull in amazing background pics
+
+Add ability to have graffiti fonts
+
+Add ability to write merssages - connect to AI who knows what you are trying to do in your life and insert messages - connects to your todo task list whereby you describe what you want to do and what your challenges are - the AI should give messages to help you overcome and remind you of things to do.
+
+Connect to calendar and have you busy when the timer is counting down.
 
 DISTRIBUTION
 ------------
