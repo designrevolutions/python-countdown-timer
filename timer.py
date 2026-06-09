@@ -238,9 +238,14 @@ class CountdownTimer(tk.Tk):
         self.minsize(320, 220)
 
     # ── UI construction ───────────────────────────────────────────────────────
-# Stopped here
+
     def _build_ui(self) -> None:
+
+        # +++++++++++++++++++++++++++++++
+        # Setup of countdown timer display. Start
         # Timer display — expands to fill all available vertical space
+
+        # Setup the outer canvas frame, which contains the countdown timer - the buttons below are inside another object.
         self._canvas = tk.Frame(self, bg=BACKGROUND_COLOR)
         self._canvas.pack(fill=tk.BOTH, expand=True)
 
@@ -254,6 +259,11 @@ class CountdownTimer(tk.Tk):
         )
         self._label.pack(fill=tk.BOTH, expand=True)
 
+        # Setup of countdown timer display. End
+        # +++++++++++++++++++++++++++++++
+
+        # >>>>>>>>>>>>>>>>>>>>
+        # Setup of buttons start
         # Button row — sits below the timer label
         bar = tk.Frame(self, bg=BACKGROUND_COLOR) # This is the container for the control buttons. It is placed at the bottom of the window, below the timer label. The buttons themselves will be added to an inner frame within this bar, which allows them to be centered regardless of the window width.
         bar.pack(fill=tk.X, pady=(0, 14))
@@ -300,6 +310,9 @@ class CountdownTimer(tk.Tk):
             )
             self._btn_close.pack(side=tk.LEFT, padx=6)
 
+        # Setup of buttons end
+        # >>>>>>>>>>>>>>>>>>>>
+
     # ── Formatting helper ─────────────────────────────────────────────────────
 
     @staticmethod
@@ -316,7 +329,7 @@ class CountdownTimer(tk.Tk):
         return TEXT_COLOR
 
     # ── Font scaling ──────────────────────────────────────────────────────────
-
+## Stopped here
     def _on_configure(self, event: tk.Event) -> None:
         """Debounce resize events before recalculating font size."""
         if event.widget is not self:
