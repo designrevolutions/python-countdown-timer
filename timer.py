@@ -238,7 +238,7 @@ class CountdownTimer(tk.Tk):
         self.minsize(320, 220)
 
     # ── UI construction ───────────────────────────────────────────────────────
-
+# Stopped here
     def _build_ui(self) -> None:
         # Timer display — expands to fill all available vertical space
         self._canvas = tk.Frame(self, bg=BACKGROUND_COLOR)
@@ -255,7 +255,7 @@ class CountdownTimer(tk.Tk):
         self._label.pack(fill=tk.BOTH, expand=True)
 
         # Button row — sits below the timer label
-        bar = tk.Frame(self, bg=BACKGROUND_COLOR)
+        bar = tk.Frame(self, bg=BACKGROUND_COLOR) # This is the container for the control buttons. It is placed at the bottom of the window, below the timer label. The buttons themselves will be added to an inner frame within this bar, which allows them to be centered regardless of the window width.
         bar.pack(fill=tk.X, pady=(0, 14))
         self._bar = bar  # keep a reference for transparency
 
