@@ -30,6 +30,9 @@
 #       Clean launch on Windows (no console window, GUI only):
 #         pythonw timer.py
 #
+#       Clean launch on Linux (no console, terminal returned immediately):
+#         ./timer.sh
+#
 #       Pass --help to see all available options:
 #         python timer.py --help
 #
@@ -59,7 +62,8 @@
 #      python timer.py --time 20 --alarm "C:\sounds\alarm.wav"
 #
 #    Combine anything:
-#      pythonw timer.py --time 25 --top --fullscreen --bg "#000000"
+#      pythonw timer.py --time 25 --top --fullscreen --bg "#000000"   # Windows
+#      ./timer.sh     --time 25 --top --fullscreen --bg "#000000"     # Linux
 #
 #    Note: any argument not supplied falls back to the SETTINGS block below.
 #
