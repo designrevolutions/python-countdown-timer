@@ -700,7 +700,9 @@ def _apply_args(args: argparse.Namespace) -> None:
     if args.transparent:               TRANSPARENT_BACKGROUND    = True
 
 
-if __name__ == "__main__":
+# Wrapping startup in a named function gives code2flow a labelled root node so
+# generated call-graph diagrams have a clear "main" entry point to start from.
+def main() -> None:
     _apply_args(_parse_args())
 
     if _PYGAME:
@@ -708,3 +710,7 @@ if __name__ == "__main__":
 
     app = CountdownTimer()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
