@@ -14,20 +14,20 @@ subgraph legend{
         <tr><td>Function call</td><td><font color='black'>&#8594;</font></td></tr>
         </table></td></tr></table>
         >];
-}node_ce07c7a2 [label="475: _flash_cycle()" name="timer::CountdownTimer._flash_cycle" shape="rect" style="rounded,filled" fillcolor="#6db33f" ];
-node_207e25da [label="345: _scale_font()" name="timer::CountdownTimer._scale_font" shape="rect" style="rounded,filled" fillcolor="#6db33f" ];
-node_a9361e63 [label="470: _start_flash()" name="timer::CountdownTimer._start_flash" shape="rect" style="rounded,filled" fillcolor="#cccccc" ];
-node_01496c17 [label="461: _time_up()" name="timer::CountdownTimer._time_up" shape="rect" style="rounded,filled" fillcolor="#cccccc" ];
-node_a9361e63 -> node_ce07c7a2 [color="#009E73" penwidth="2"];
-node_01496c17 -> node_207e25da [color="#CC79A7" penwidth="2"];
-node_01496c17 -> node_a9361e63 [color="#CC79A7" penwidth="2"];
-subgraph cluster_a6ef0c47 {
+}node_c4a5cb5f [label="475: _flash_cycle()" name="timer::CountdownTimer._flash_cycle" shape="rect" style="rounded,filled" fillcolor="#6db33f" ];
+node_431e5995 [label="345: _scale_font()" name="timer::CountdownTimer._scale_font" shape="rect" style="rounded,filled" fillcolor="#6db33f" ];
+node_86e3c74d [label="470: _start_flash()" name="timer::CountdownTimer._start_flash" shape="rect" style="rounded,filled" fillcolor="#cccccc" ];
+node_6fa62402 [label="461: _time_up()" name="timer::CountdownTimer._time_up" shape="rect" style="rounded,filled" fillcolor="#cccccc" ];
+node_86e3c74d -> node_c4a5cb5f [color="#0072B2" penwidth="2"];
+node_6fa62402 -> node_431e5995 [color="#56B4E9" penwidth="2"];
+node_6fa62402 -> node_86e3c74d [color="#56B4E9" penwidth="2"];
+subgraph cluster_4ca73133 {
     label="File: timer";
     name="timer";
     style="filled";
     graph[style=dotted];
-    subgraph cluster_0dde1975 {
-        node_207e25da node_01496c17 node_a9361e63 node_ce07c7a2;
+    subgraph cluster_850518c4 {
+        node_431e5995 node_6fa62402 node_86e3c74d node_c4a5cb5f;
         label="Class: CountdownTimer";
         name="CountdownTimer";
         style="filled";
