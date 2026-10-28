@@ -10,3 +10,8 @@ venv/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Quiz questions — personal copy, rewritten as markers change.
+# Copy questions.sample.json to questions.json to get started.
+questions.json
+questions.json.tmp

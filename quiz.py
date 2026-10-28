@@ -11,11 +11,17 @@
 #
 #  Questions file format — a flat list of objects:
 #      [
-#        {"question": "What is the capital of France?", "answer": "Paris"},
-#        {"question": "What is the capital of Japan?",  "answer": "Tokyo"}
+#        {"question": "What is the capital of France?", "answer": "Paris", "marker": 1},
+#        {"question": "What is the capital of Japan?",  "answer": "Tokyo", "marker": 1}
 #      ]
 #
 #  Answers are compared case-insensitively, ignoring leading/trailing spaces.
+#
+#  "marker" is a selection weight: a question with marker 3 is three times as
+#  likely to be picked as one with marker 1.  A wrong answer raises it by
+#  MARKER_STEP; a correct answer resets it to DEFAULT_MARKER.  Markers are saved
+#  back to the file so they survive restarts.  "marker" may be omitted when
+#  adding questions; it then starts at DEFAULT_MARKER.
 #
 # =============================================================================
 
@@ -44,6 +50,14 @@ FEEDBACK_SECONDS = 4
 # works no matter which directory the program is launched from
 QUESTIONS_FILE = "questions.json"
 
+# ── Weighting ─────────────────────────────────────────────────────────────────
+
+# Marker every question starts at, and returns to after a correct answer
+DEFAULT_MARKER = 1
+
+# Amount added to a question's marker on every wrong answer (no upper limit)
+MARKER_STEP = 1
+
 # ── Colours ───────────────────────────────────────────────────────────────────
 # Deliberately not pure black: timer.py's transparent mode turns every
 # BACKGROUND_COLOR pixel (default "#000000") see-through.
@@ -66,23 +80,28 @@ def _warn(message: str) -> None:
     print(f"[quiz] {message}", file=sys.stderr)
 
 
-def load_questions(path: str = QUESTIONS_FILE) -> list[dict[str, str]]:
+def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
     """Read the questions file once.  Never raises: a missing or malformed file
-    gives an empty list, and individual bad entries are skipped."""
+    gives empty lists, and individual bad entries are skipped.
+
+    Returns (all_entries, questions).  `questions` holds the valid entries — the
+    very same dict objects as in `all_entries`, so updating a marker on one is
+    reflected in what save_questions() writes, and malformed entries are kept
+    in the file untouched rather than silently deleted."""
     path = _resolve(path)
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
-        _warn(f"questions file not found: {path}")
-        return []
+        _warn(f"questions file not found: {path} (copy questions.sample.json to create it)")
+        return [], []
     except (OSError, ValueError) as exc:  # ValueError covers JSON and decoding errors
         _warn(f"could not read {path}: {exc}")
-        return []
+        return [], []
 
     if not isinstance(data, list):
         _warn(f"{path} should contain a list of question objects")
-        return []
+        return [], []
 
     questions = []
     for item in data:
@@ -91,12 +110,35 @@ def load_questions(path: str = QUESTIONS_FILE) -> list[dict[str, str]]:
         q, a = item.get("question"), item.get("answer")
         # Allow numeric answers in the JSON (e.g. "answer": 7)
         if isinstance(q, str) and isinstance(a, (str, int, float)) and q.strip() and str(a).strip():
-            questions.append({"question": q.strip(), "answer": str(a).strip()})
+            # Missing or unusable marker (bool, text, zero, negative) → default.
+            # bool is excluded because it is a subclass of int in Python.
+            m = item.get("marker")
+            if isinstance(m, bool) or not isinstance(m, (int, float)) or m <= 0:
+                item["marker"] = DEFAULT_MARKER
+            questions.append(item)
 
     skipped = len(data) - len(questions)
     if skipped:
         _warn(f"skipped {skipped} malformed entr{'y' if skipped == 1 else 'ies'} in {path}")
-    return questions
+    return data, questions
+
+
+def save_questions(path: str, entries: list) -> None:
+    """Write entries back to the questions file, one question per line so it
+    stays easy to edit by hand.  Never raises; a failed save only loses the
+    latest marker change."""
+    path = _resolve(path)
+    body = ",\n".join("  " + json.dumps(item, ensure_ascii=False) for item in entries)
+    text = f"[\n{body}\n]\n" if entries else "[]\n"
+    # Write to a temp file and swap it in, so a crash mid-write can't leave
+    # a half-written (and therefore unreadable) questions file behind
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except OSError as exc:
+        _warn(f"could not save markers to {path}: {exc}")
 
 
 def _normalise(text: str) -> str:
@@ -126,8 +168,10 @@ class QuizPopup:
         self.interval_s  = interval_s
         self.timeout_s   = timeout_s
         self.feedback_s  = feedback_s
-        self._questions  = load_questions(questions_file)  # loaded once, up front
-        self._current: dict[str, str] | None = None        # question being asked
+        self._questions_file = questions_file
+        # Loaded once, up front; only rewritten when a marker changes
+        self._entries, self._questions = load_questions(questions_file)
+        self._current: dict | None = None  # question being asked
 
         # tkinter after() handle IDs — None means not currently scheduled
         self._window_id:   str | None = None  # start of the next quiz window
@@ -247,11 +291,12 @@ class QuizPopup:
             self._feedback_id = self._frame.after(int(self.feedback_s * 1000), self._hide)
             return
 
-        # Avoid asking the same question twice in a row when there's a choice
+        # Avoid asking the same question twice in a row when there's a choice,
+        # then pick with probability proportional to each question's marker
         choices = [q for q in self._questions if q is not self._current] or self._questions
-        self._current = random.choice(choices)
+        self._current = random.choices(choices, weights=[q["marker"] for q in choices])[0]
 
-        self._question.configure(text=self._current["question"])
+        self._question.configure(text=self._current["question"].strip())
         self._entry.delete(0, tk.END)
         self._answer_row.pack()
         self._place()
@@ -273,14 +318,18 @@ class QuizPopup:
         self._release_focus()
         self._answer_row.pack_forget()
 
-        if _normalise(given) == _normalise(self._current["answer"]):
+        answer = str(self._current["answer"]).strip()
+        if _normalise(given) == _normalise(answer):
+            self._current["marker"] = DEFAULT_MARKER
             self._result.configure(text="Well done!")
             self._flash(lambda on: self._result.configure(fg=CORRECT_COLOR if on else POPUP_BG))
         else:
-            self._result.configure(
-                text=f"Not quite. The answer is: {self._current['answer']}", fg=WRONG_COLOR,
-            )
+            # Grows on every wrong answer, so repeatedly missed questions keep
+            # coming up more often until they are answered correctly
+            self._current["marker"] += MARKER_STEP
+            self._result.configure(text=f"Not quite. The answer is: {answer}", fg=WRONG_COLOR)
         self._result.pack()
+        save_questions(self._questions_file, self._entries)
         self._feedback_id = self._frame.after(int(self.feedback_s * 1000), self._hide)
 
     def _hide(self) -> None:

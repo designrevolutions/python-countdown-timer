@@ -31,10 +31,18 @@ source venv/bin/activate
 # Optional: only needed if you want to play a .wav/.mp3 alarm file
 pip install pygame
 
+# Required for the quiz pop-up: create your own questions file from the sample
+# Windows
+copy questions.sample.json questions.json
+# macOS / Linux
+cp questions.sample.json questions.json
+
 python timer.py
 ```
 
 No external packages are required if you're happy with the built-in system beep.
+
+**The quiz needs `questions.json`, which is not in the repository.** Only the template `questions.sample.json` is committed. Copy it to `questions.json` as shown above (copying rather than renaming keeps the template intact). `questions.json` is git-ignored because the timer rewrites it as you answer questions. Without it the timer still runs, but no questions appear and the **?** button shows "No quiz questions loaded".
 
 ## Configuration
 
@@ -98,16 +106,16 @@ Boolean flags (`--top`, `--fullscreen`, `--transparent`) are either present or a
 
 Once in every 5-minute window, at a random moment, a question flashes up over the timer digits. Type an answer and press Submit (or Enter): a correct answer gets a flashing "Well done!", a wrong one shows the right answer. Unanswered questions disappear after 30 seconds. The **?** button shows a question immediately (replacing any question already on screen) and restarts the 5-minute schedule from that moment.
 
-Questions live in `questions.json`, a flat list you can extend:
+Questions live in `questions.json` (create it from `questions.sample.json`; see [Setup](#setup)), a flat list you can extend:
 
 ```json
 [
-  {"question": "What is the capital of France?", "answer": "Paris"},
-  {"question": "What is the capital of Japan?", "answer": "Tokyo"}
+  {"question": "What is the capital of France?", "answer": "Paris", "marker": 1},
+  {"question": "What is the capital of Japan?", "answer": "Tokyo", "marker": 1}
 ]
 ```
 
-Answers are matched case-insensitively, ignoring surrounding spaces. A missing or malformed file just disables the quiz; it never stops the timer. The quiz code lives in `quiz.py` and can be tried on its own: `python quiz.py --interval 20 --timeout 10`.
+Answers are matched case-insensitively, ignoring surrounding spaces. `marker` is a selection weight: each wrong answer raises it by 1, making that question proportionally more likely to come up again (a question at 3 is three times as likely as one at 1), and a correct answer resets it to 1. Markers are saved back to `questions.json`, so they carry over between sessions. You can leave `marker` out when adding questions; it starts at 1. A missing or malformed file just disables the quiz; it never stops the timer. The quiz code lives in `quiz.py` and can be tried on its own: `python quiz.py --interval 20 --timeout 10`.
 
 ## Keyboard shortcuts
 
