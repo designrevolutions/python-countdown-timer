@@ -200,6 +200,7 @@ class CountdownTimer(tk.Tk):
         self._flashing        = False
         self._flash_on        = False
         self._transparency_on = False  # toggled by _apply_transparency / _toggle_bg
+        self._menu_visible    = True   # toggled by the Hide/Show button
 
         # Wall-clock anchors used for drift-free timing
         self._anchor_mono:  float = 0.0  # time.monotonic() when (re)started
@@ -219,9 +220,9 @@ class CountdownTimer(tk.Tk):
 
         self.bind("<Configure>", self._on_configure)
         self.bind("<Escape>",    lambda _e: self._exit_fullscreen())
-        self.bind("<space>",     lambda _e: self._toggle_pause())
-        self.bind("r",           lambda _e: self._reset())
-        self.bind("R",           lambda _e: self._reset())
+        self.bind("<space>",     self._shortcut(self._toggle_pause))
+        self.bind("r",           self._shortcut(self._reset))
+        self.bind("R",           self._shortcut(self._reset))
 
         self._refresh_label()
 
@@ -276,11 +277,39 @@ class CountdownTimer(tk.Tk):
             cursor="hand2",
             bd=0,
         )
-        self._btn_fs    = tk.Button(inner, text="Fullscreen", command=self._toggle_fullscreen, **_btn_kw)
-        self._btn_start = tk.Button(inner, text="Start",      command=self._toggle_pause,      **_btn_kw)
-        self._btn_reset = tk.Button(inner, text="Reset",      command=self._reset,             **_btn_kw)
+        # Every control except Hide/Show and ✕ lives in this frame. Hiding the menu
+        # is then a single pack_forget() on the frame, and showing it is a single
+        # pack() call, instead of juggling each widget individually.
+        self._menu_items = tk.Frame(inner, bg=BACKGROUND_COLOR)
+        self._menu_items.pack(side=tk.LEFT)
 
-        for btn in (self._btn_fs, self._btn_start, self._btn_reset):
+        # Custom time entry (whole minutes). validate="key" runs the validator on
+        # every keystroke BEFORE the character is inserted; returning False rejects it.
+        # "%P" passes the text the box WOULD contain if the keystroke were accepted.
+        self._time_entry = tk.Entry(
+            self._menu_items,
+            width=6,
+            justify="center",
+            font=(FONT_FAMILY, BUTTON_FONT_SIZE),
+            bg="#2d2d2d",
+            fg="#eeeeee",
+            insertbackground="#eeeeee",  # caret colour (default black is invisible here)
+            relief=tk.FLAT,
+            validate="key",
+            validatecommand=(self.register(self._validate_minutes), "%P"),
+        )
+        self._time_entry.pack(side=tk.LEFT, padx=6, ipady=7)
+        # With overrideredirect (transparent mode) the window never gets keyboard
+        # focus on its own, so grab it explicitly when the box is clicked.
+        self._time_entry.bind("<Button-1>", lambda _e: self._time_entry.focus_force())
+        self._time_entry.bind("<Return>",   lambda _e: self._apply_custom_time())
+
+        self._btn_apply = tk.Button(self._menu_items, text="Apply", command=self._apply_custom_time, **_btn_kw)
+        self._btn_fs    = tk.Button(self._menu_items, text="Fullscreen", command=self._toggle_fullscreen, **_btn_kw)
+        self._btn_start = tk.Button(self._menu_items, text="Start",      command=self._toggle_pause,      **_btn_kw)
+        self._btn_reset = tk.Button(self._menu_items, text="Reset",      command=self._reset,             **_btn_kw)
+
+        for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset):
             btn.pack(side=tk.LEFT, padx=6)
 
         # Extra buttons only present when transparent mode is active on Windows,
@@ -289,16 +318,67 @@ class CountdownTimer(tk.Tk):
             # Toggle lets the user temporarily make the window solid so they can
             # move it with Shift+Win+Arrow or alt-tab, then re-enable transparency.
             self._btn_trans = tk.Button(
-                inner, text="Show BG",
+                self._menu_items, text="Show BG",
                 command=self._toggle_bg, **_btn_kw,
             )
             self._btn_trans.pack(side=tk.LEFT, padx=6)
 
+        # Hide/Show sits OUTSIDE the collapsible frame so it stays visible (and
+        # clickable) after the rest of the menu is hidden. It is packed before
+        # the ✕ so it appears to its left.
+        self._btn_hide = tk.Button(inner, text="Hide", command=self._toggle_menu, **_btn_kw)
+        self._btn_hide.pack(side=tk.LEFT, padx=6)
+
+        if TRANSPARENT_BACKGROUND and platform.system() == "Windows":
             self._btn_close = tk.Button(
                 inner, text="✕", command=self.destroy,
                 **{**_btn_kw, "padx": 12, "fg": "#ff6b6b"},
             )
             self._btn_close.pack(side=tk.LEFT, padx=6)
+
+    # ── Custom time entry ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _validate_minutes(proposed: str) -> bool:
+        """Allow only an empty box or ASCII digits (rejects letters, '-', '.', spaces).
+
+        isascii() is needed because str.isdigit() also accepts characters like '²'.
+        """
+        return proposed == "" or (proposed.isascii() and proposed.isdigit())
+
+    def _apply_custom_time(self) -> None:
+        """Set the countdown to the number of minutes typed in the entry box."""
+        text = self._time_entry.get()
+        if not text or int(text) == 0:
+            return  # nothing entered, or 0 (a zero-length timer can't be started)
+        # Make the entered value the new "original" time, then reuse _reset():
+        # it stops any running countdown, clears the flash, re-enables Start and
+        # redraws the label. Reset will therefore return to this value too.
+        self._total = int(text) * 60
+        self._reset()
+        self.focus_set()  # hand keyboard focus back so Space / R shortcuts work again
+
+    # ── Menu hide / show ──────────────────────────────────────────────────────
+
+    def _toggle_menu(self) -> None:
+        """Collapse or restore the whole menu except the Hide/Show and ✕ buttons."""
+        if self._menu_visible:
+            self._menu_items.pack_forget()
+            self._btn_hide.configure(text="Show")
+        else:
+            # before= re-inserts the frame to the LEFT of the Hide button,
+            # otherwise it would be appended after the ✕ and the order would change
+            self._menu_items.pack(side=tk.LEFT, before=self._btn_hide)
+            self._btn_hide.configure(text="Hide")
+        self._menu_visible = not self._menu_visible
+
+    def _shortcut(self, action):
+        """Wrap a keyboard-shortcut action so it is ignored while typing in the
+        time box (otherwise pressing Space or R there would pause/reset the timer)."""
+        def handler(_event):
+            if self.focus_get() is not self._time_entry:
+                action()
+        return handler
 
     # ── Formatting helper ─────────────────────────────────────────────────────
 
@@ -492,9 +572,9 @@ class CountdownTimer(tk.Tk):
             self.wm_attributes("-transparentcolor", BACKGROUND_COLOR)
         elif system == "Darwin": # This is for macOS, which identifies as "Darwin"
             self.wm_attributes("-transparent", True)
-            for widget in (self, self._canvas, self._label, self._bar, self._inner):
+            for widget in (self, self._canvas, self._label, self._bar, self._inner, self._menu_items):
                 widget.configure(bg="systemTransparent")
-            for btn in (self._btn_fs, self._btn_start, self._btn_reset):
+            for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset, self._btn_hide):
                 btn.configure(bg="systemTransparent")
         # Linux: silently skipped; user must configure their compositing WM
         # (e.g. add `blur-background = true;` to picom.conf).
