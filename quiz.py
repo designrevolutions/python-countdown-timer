@@ -11,17 +11,21 @@
 #
 #  Questions file format — a flat list of objects:
 #      [
-#        {"question": "What is the capital of France?", "answer": "Paris", "marker": 1},
-#        {"question": "What is the capital of Japan?",  "answer": "Tokyo", "marker": 1}
+#        {"question": "What is the capital of France?", "answer": "Paris", "marker": 20},
+#        {"question": "What is the capital of Japan?",  "answer": "Tokyo", "marker": 20}
 #      ]
 #
 #  Answers are compared case-insensitively, ignoring leading/trailing spaces.
 #
-#  "marker" is a selection weight: a question with marker 3 is three times as
-#  likely to be picked as one with marker 1.  A wrong answer raises it by
-#  MARKER_STEP; a correct answer resets it to DEFAULT_MARKER.  Markers are saved
-#  back to the file so they survive restarts.  "marker" may be omitted when
-#  adding questions; it then starts at DEFAULT_MARKER.
+#  "marker" is a selection weight: a question with marker 40 is twice as likely
+#  to be picked as one with marker 20.  Every question starts at DEFAULT_MARKER.
+#    Wrong answer   → marker rises by MARKER_UP (no upper limit).
+#    Correct answer → marker drops to DEFAULT_MARKER if above it, then falls by
+#                     MARKER_DOWN, never below MIN_MARKER.  With the defaults:
+#                     20 → 15 → 10 → 5 → 1 → 1 ...
+#    No answer      → unchanged.
+#  Markers are saved back to the file so they survive restarts.  "marker" may
+#  be omitted when adding questions; it then starts at DEFAULT_MARKER.
 #
 # =============================================================================
 
@@ -52,11 +56,19 @@ QUESTIONS_FILE = "questions.json"
 
 # ── Weighting ─────────────────────────────────────────────────────────────────
 
-# Marker every question starts at, and returns to after a correct answer
-DEFAULT_MARKER = 1
+# Marker every question starts at; leaves room below for correct answers to
+# make a question progressively less likely
+DEFAULT_MARKER = 20
+
+# Floor for the marker.  Must stay above 0: a question at 0 would never be
+# asked again, and random.choices() fails if every weight is 0
+MIN_MARKER = 1
 
 # Amount added to a question's marker on every wrong answer (no upper limit)
-MARKER_STEP = 1
+MARKER_UP = 5
+
+# Amount subtracted on every correct answer (after capping at DEFAULT_MARKER)
+MARKER_DOWN = 5
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 # Deliberately not pure black: timer.py's transparent mode turns every
@@ -110,11 +122,14 @@ def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
         q, a = item.get("question"), item.get("answer")
         # Allow numeric answers in the JSON (e.g. "answer": 7)
         if isinstance(q, str) and isinstance(a, (str, int, float)) and q.strip() and str(a).strip():
-            # Missing or unusable marker (bool, text, zero, negative) → default.
+            # Missing or unusable marker (bool, text, zero, negative) → default;
+            # a small positive one (e.g. 0.5) is raised to the floor.
             # bool is excluded because it is a subclass of int in Python.
             m = item.get("marker")
             if isinstance(m, bool) or not isinstance(m, (int, float)) or m <= 0:
                 item["marker"] = DEFAULT_MARKER
+            elif m < MIN_MARKER:
+                item["marker"] = MIN_MARKER
             questions.append(item)
 
     skipped = len(data) - len(questions)
@@ -320,13 +335,17 @@ class QuizPopup:
 
         answer = str(self._current["answer"]).strip()
         if _normalise(given) == _normalise(answer):
-            self._current["marker"] = DEFAULT_MARKER
+            # A question that had been missed is first brought back to the
+            # default, so one correct answer treats it like any other question
+            # answered correctly once; repeated correct answers keep lowering it
+            marker = min(self._current["marker"], DEFAULT_MARKER) - MARKER_DOWN
+            self._current["marker"] = max(MIN_MARKER, marker)
             self._result.configure(text="Well done!")
             self._flash(lambda on: self._result.configure(fg=CORRECT_COLOR if on else POPUP_BG))
         else:
             # Grows on every wrong answer, so repeatedly missed questions keep
             # coming up more often until they are answered correctly
-            self._current["marker"] += MARKER_STEP
+            self._current["marker"] += MARKER_UP
             self._result.configure(text=f"Not quite. The answer is: {answer}", fg=WRONG_COLOR)
         self._result.pack()
         save_questions(self._questions_file, self._entries)

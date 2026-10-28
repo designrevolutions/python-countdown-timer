@@ -110,12 +110,20 @@ Questions live in `questions.json` (create it from `questions.sample.json`; see 
 
 ```json
 [
-  {"question": "What is the capital of France?", "answer": "Paris", "marker": 1},
-  {"question": "What is the capital of Japan?", "answer": "Tokyo", "marker": 1}
+  {"question": "What is the capital of France?", "answer": "Paris", "marker": 20},
+  {"question": "What is the capital of Japan?", "answer": "Tokyo", "marker": 20}
 ]
 ```
 
-Answers are matched case-insensitively, ignoring surrounding spaces. `marker` is a selection weight: each wrong answer raises it by 1, making that question proportionally more likely to come up again (a question at 3 is three times as likely as one at 1), and a correct answer resets it to 1. Markers are saved back to `questions.json`, so they carry over between sessions. You can leave `marker` out when adding questions; it starts at 1. A missing or malformed file just disables the quiz; it never stops the timer. The quiz code lives in `quiz.py` and can be tried on its own: `python quiz.py --interval 20 --timeout 10`.
+Answers are matched case-insensitively, ignoring surrounding spaces. `marker` is a selection weight: a question's chance of coming up is proportional to it, so a question at 40 is twice as likely as one at 20. Every question starts at 20.
+
+- **Wrong answer:** +5, with no upper limit.
+- **Correct answer:** if the marker is above 20 it first drops back to 20, then it goes down by 5, never below 1. A question answered correctly over and over goes 20 → 15 → 10 → 5 → 1, so it still comes up now and then.
+- **No answer (timed out):** no change.
+
+Markers are saved back to `questions.json`, so they carry over between sessions. You can leave `marker` out when adding questions; it starts at 20. The values are set by `DEFAULT_MARKER`, `MIN_MARKER`, `MARKER_UP` and `MARKER_DOWN` at the top of `quiz.py`.
+
+A missing or malformed file just disables the quiz; it never stops the timer. The quiz code lives in `quiz.py` and can be tried on its own: `python quiz.py --interval 20 --timeout 10`.
 
 ## Keyboard shortcuts
 
