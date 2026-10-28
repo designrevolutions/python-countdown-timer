@@ -121,7 +121,7 @@ def _beep() -> None:
             # Linux: try sox; fall back to the terminal bell character
             secs = BEEP_DURATION_MS / 1000
             if os.system(f"play -n -q synth {secs} sin {BEEP_FREQUENCY_HZ} 2>/dev/null") != 0:
-                sys.stdout.write("")
+                sys.stdout.write("\a")
                 sys.stdout.flush()
     except Exception:
         pass  # sys.stdout is None under pythonw; a missing beep isn't worth a crash
