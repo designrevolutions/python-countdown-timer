@@ -34,8 +34,10 @@
 import argparse
 import json
 import os
+import platform
 import random
 import sys
+import threading
 import tkinter as tk
 
 from answer_check import CLOSE, CORRECT, check_answer, load_accepted
@@ -57,6 +59,13 @@ FEEDBACK_SECONDS = 4
 # Questions file; relative paths are resolved from this file's folder, so it
 # works no matter which directory the program is launched from
 QUESTIONS_FILE = "questions.json"
+
+# ── Beep ──────────────────────────────────────────────────────────────────────
+
+# One short beep when a question appears.  Same tone as timer.py's end-of-timer
+# beep (1000 Hz), but a single short one rather than three long ones
+BEEP_FREQUENCY_HZ = 1000
+BEEP_DURATION_MS  = 150
 
 # ── Weighting ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +104,27 @@ def _resolve(path: str) -> str:
 def _warn(message: str) -> None:
     # Under pythonw sys.stderr is None; print() then quietly does nothing
     print(f"[quiz] {message}", file=sys.stderr)
+
+
+def _beep() -> None:
+    """Play one short beep, the same way timer.py makes its end-of-timer beep.
+    Blocks while sounding, so call it from a daemon thread.  Never raises."""
+    system = platform.system()
+    try:
+        if system == "Windows":
+            import winsound
+            winsound.Beep(BEEP_FREQUENCY_HZ, BEEP_DURATION_MS)
+        elif system == "Darwin":
+            # Short built-in sound, distinct from the end alarm's Glass.aiff
+            os.system("afplay /System/Library/Sounds/Tink.aiff 2>/dev/null")
+        else:
+            # Linux: try sox; fall back to the terminal bell character
+            secs = BEEP_DURATION_MS / 1000
+            if os.system(f"play -n -q synth {secs} sin {BEEP_FREQUENCY_HZ} 2>/dev/null") != 0:
+                sys.stdout.write("")
+                sys.stdout.flush()
+    except Exception:
+        pass  # sys.stdout is None under pythonw; a missing beep isn't worth a crash
 
 
 def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
@@ -320,6 +350,7 @@ class QuizPopup:
         self._entry.focus_set()
 
         self._flash(self._attention, self._ATTENTION_TOGGLES)
+        threading.Thread(target=_beep, daemon=True).start()
         self._timeout_id = self._frame.after(int(self.timeout_s * 1000), self._hide)
 
     def _place(self) -> None:
