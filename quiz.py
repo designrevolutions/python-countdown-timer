@@ -25,8 +25,7 @@
 #                     20 → 15 → 10 → 5 → 1 → 1 ...
 #    No answer      → unchanged.
 #  Weights are saved back to the file so they survive restarts.  "weight" may
-#  be omitted when adding questions; it then starts at DEFAULT_WEIGHT.  Files
-#  from older versions that use "marker" instead are converted on load.
+#  be omitted when adding questions; it then starts at DEFAULT_WEIGHT.
 #
 # =============================================================================
 
@@ -123,11 +122,6 @@ def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
         q, a = item.get("question"), item.get("answer")
         # Allow numeric answers in the JSON (e.g. "answer": 7)
         if isinstance(q, str) and isinstance(a, (str, int, float)) and q.strip() and str(a).strip():
-            # Older files called this field "marker"; rename it so the next
-            # save writes "weight" and the old key disappears
-            if "marker" in item:
-                item.setdefault("weight", item["marker"])
-                del item["marker"]
             # Missing or unusable weight (bool, text, zero, negative) → default;
             # a small positive one (e.g. 0.5) is raised to the floor.
             # bool is excluded because it is a subclass of int in Python.
