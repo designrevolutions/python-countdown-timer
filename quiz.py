@@ -15,7 +15,9 @@
 #        {"question": "What is the capital of Japan?",  "answer": "Tokyo", "weight": 20}
 #      ]
 #
-#  Answers are compared case-insensitively, ignoring leading/trailing spaces.
+#  Answers are checked by answer_check.py, which ignores case, accents and
+#  punctuation, accepts alternatives from accepted_answers.json, and treats
+#  small spelling mistakes as "close" (counted as correct for weighting).
 #
 #  "weight" sets how likely a question is to be picked: one with weight 40 is
 #  twice as likely as one with weight 20.  Every question starts at DEFAULT_WEIGHT.
@@ -35,6 +37,8 @@ import os
 import random
 import sys
 import tkinter as tk
+
+from answer_check import CLOSE, CORRECT, check_answer, load_accepted
 
 # =============================================================================
 #  SETTINGS  —  defaults; callers can override each one via QuizPopup(...)
@@ -77,6 +81,7 @@ POPUP_BG      = "#1e2a3a"
 ACCENT_COLOR  = "#ffcc00"
 TEXT_COLOR    = "#ffffff"
 CORRECT_COLOR = "#44dd66"
+CLOSE_COLOR   = "#66ccff"  # right answer, misspelt
 WRONG_COLOR   = "#ff6b6b"
 
 # =============================================================================
@@ -156,10 +161,6 @@ def save_questions(path: str, entries: list) -> None:
         _warn(f"could not save weights to {path}: {exc}")
 
 
-def _normalise(text: str) -> str:
-    return text.strip().casefold()
-
-
 class QuizPopup:
     """Quiz panel drawn inside `parent` (any tkinter widget) with place()."""
 
@@ -186,6 +187,7 @@ class QuizPopup:
         self._questions_file = questions_file
         # Loaded once, up front; only rewritten when a weight changes
         self._entries, self._questions = load_questions(questions_file)
+        self._accepted = load_accepted()  # question → alternative answers
         self._current: dict | None = None  # question being asked
 
         # tkinter after() handle IDs — None means not currently scheduled
@@ -334,14 +336,20 @@ class QuizPopup:
         self._answer_row.pack_forget()
 
         answer = str(self._current["answer"]).strip()
-        if _normalise(given) == _normalise(answer):
+        others = [q["answer"] for q in self._questions if q is not self._current]
+        accepted = self._accepted.get(self._current["question"].strip())
+        verdict = check_answer(given, answer, others, accepted)
+        if verdict in (CORRECT, CLOSE):
             # A question that had been missed is first brought back to the
             # default, so one correct answer treats it like any other question
             # answered correctly once; repeated correct answers keep lowering it
             weight = min(self._current["weight"], DEFAULT_WEIGHT) - WEIGHT_DOWN
             self._current["weight"] = max(MIN_WEIGHT, weight)
-            self._result.configure(text="Well done!")
-            self._flash(lambda on: self._result.configure(fg=CORRECT_COLOR if on else POPUP_BG))
+            if verdict == CORRECT:
+                self._result.configure(text="Well done!")
+                self._flash(lambda on: self._result.configure(fg=CORRECT_COLOR if on else POPUP_BG))
+            else:
+                self._result.configure(text=f"Correct, but check the spelling: {answer}", fg=CLOSE_COLOR)
         else:
             # Grows on every wrong answer, so repeatedly missed questions keep
             # coming up more often until they are answered correctly

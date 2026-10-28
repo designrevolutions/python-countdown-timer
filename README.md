@@ -106,7 +106,7 @@ Boolean flags (`--top`, `--fullscreen`, `--transparent`) are either present or a
 
 ## Quiz pop-up
 
-Once in every 5-minute window, at a random moment, a question flashes up over the timer digits. Type an answer and press Submit (or Enter): a correct answer gets a flashing "Well done!", a wrong one shows the right answer. Unanswered questions disappear after 30 seconds. The **?** button shows a question immediately (replacing any question already on screen) and restarts the 5-minute schedule from that moment.
+Once in every 5-minute window, at a random moment, a question flashes up over the timer digits. Type an answer and press Submit (or Enter): a correct answer gets a flashing "Well done!", a nearly-right one shows "Correct, but check the spelling: …" in blue (no flashing), and a wrong one shows the right answer. Unanswered questions disappear after 30 seconds. The **?** button shows a question immediately (replacing any question already on screen) and restarts the 5-minute schedule from that moment.
 
 Questions live in `questions.json` (create it from `questions.sample.json`; see [Setup](#setup)), a flat list you can extend:
 
@@ -117,15 +117,44 @@ Questions live in `questions.json` (create it from `questions.sample.json`; see 
 ]
 ```
 
-Answers are matched case-insensitively, ignoring surrounding spaces. `weight` sets how often a question comes up: its chance of being picked is proportional to its weight, so a question at 40 is twice as likely as one at 20. Every question starts at 20.
+`weight` sets how often a question comes up: its chance of being picked is proportional to its weight, so a question at 40 is twice as likely as one at 20. Every question starts at 20.
 
 - **Wrong answer:** +5, with no upper limit.
-- **Correct answer:** if the weight is above 20 it first drops back to 20, then it goes down by 5, never below 1. A question answered correctly over and over goes 20 → 15 → 10 → 5 → 1, so it still comes up now and then.
+- **Correct (or close) answer:** if the weight is above 20 it first drops back to 20, then it goes down by 5, never below 1. A question answered correctly over and over goes 20 → 15 → 10 → 5 → 1, so it still comes up now and then.
 - **No answer (timed out):** no change.
 
 Weights are saved back to `questions.json`, so they carry over between sessions. You can leave `weight` out when adding questions; it starts at 20. The values are set by `DEFAULT_WEIGHT`, `MIN_WEIGHT`, `WEIGHT_UP` and `WEIGHT_DOWN` at the top of `quiz.py`.
 
 A missing or malformed file just disables the quiz; it never stops the timer. The quiz code lives in `quiz.py` and can be tried on its own: `python quiz.py --interval 20 --timeout 10`.
+
+### How answers are matched
+
+Matching is done by `answer_check.py`. Each answer is marked **correct**, **close** or **wrong**:
+
+1. **Normalisation.** Both your answer and the stored one are normalised first, so these never count against you: upper/lower case, leading, trailing or repeated spaces, accents (`Brasília` = `Brasilia`), punctuation and hyphens (`Porto Novo` = `Porto-Novo`), and `Saint` vs `St` (`Saint Johns` = `St. John's`).
+2. **Exact match** after normalisation → correct.
+3. **Spelling mistakes.** Otherwise typos are counted (a missing, extra, wrong or swapped letter is one typo each). Within the limit → close, which counts as correct for weighting.
+
+   | Answer length (letters) | Typos allowed |
+   |---|---|
+   | 4 or fewer | 0 — must be exact (`Lome` is not close to `Lima`) |
+   | 5–8 | 1 (`Otawa` is close to `Ottawa`) |
+   | 9 or more | 2 |
+
+   The limits are `EXACT_MAX_LETTERS`, `ONE_TYPO_MAX_LETTERS`, `ONE_TYPO` and `TWO_TYPOS` at the top of `answer_check.py`.
+4. **Never close** if your answer is exactly the answer to a different question (`Kingstown` for Jamaica, whose answer is `Kingston`, is wrong), or if the answer contains digits (`365` is wrong, not close, for `366`).
+
+### Alternative answers: `accepted_answers.json`
+
+Some questions have more than one valid answer. `accepted_answers.json` (committed, next to `questions.json`) maps a question, written exactly as in the `"question"` field of `questions.json`, to a list of other answers to accept:
+
+```json
+{
+  "Ukraine": ["Kiev"]
+}
+```
+
+An alternative is matched with the same normalisation and typo rules as the main answer. The feedback still shows the main answer from `questions.json`. The file is optional: if it is missing, empty or malformed, the quiz works normally using only the main answers.
 
 ## Keyboard shortcuts
 
