@@ -554,22 +554,93 @@ class CountdownTimer(tk.Tk):
         else:
             self._enter_fullscreen()
 
-    def _enter_fullscreen(self) -> None:
-        """Switch to borderless fullscreen."""
+    # ── Multi-monitor support (Windows) ───────────────────────────────────────
+    # tkinter only knows the primary monitor (winfo_screenwidth etc.), and Tk's
+    # own -fullscreen on Windows always jumps to the primary monitor.  These
+    # helpers ask Windows directly so fullscreen stays on the window's monitor.
+
+    def _win32(self):
+        """Return (user32, hwnd, MonitorInfo struct) or None if unavailable."""
+        if platform.system() != "Windows":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _MonitorInfo(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize",    wintypes.DWORD),
+                    ("rcMonitor", wintypes.RECT),   # whole monitor, incl. taskbar
+                    ("rcWork",    wintypes.RECT),
+                    ("dwFlags",   wintypes.DWORD),
+                ]
+
+            user32 = ctypes.windll.user32
+            # Declare handle types; the int default would truncate 64-bit handles
+            user32.GetAncestor.argtypes       = (wintypes.HWND, wintypes.UINT)
+            user32.GetAncestor.restype        = wintypes.HWND
+            user32.MonitorFromWindow.argtypes = (wintypes.HWND, wintypes.DWORD)
+            user32.MonitorFromWindow.restype  = wintypes.HMONITOR
+            user32.GetMonitorInfoW.argtypes   = (wintypes.HMONITOR, ctypes.POINTER(_MonitorInfo))
+            user32.SetWindowPos.argtypes      = (wintypes.HWND, wintypes.HWND, ctypes.c_int,
+                                                 ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT)
+
+            # winfo_id() is Tk's inner widget; GA_ROOT (2) gives the real top-level window
+            hwnd = user32.GetAncestor(self.winfo_id(), 2)
+            return user32, hwnd, _MonitorInfo
+        except Exception:
+            return None
+
+    def _monitor_rect(self) -> tuple[int, int, int, int]:
+        """Return (x, y, width, height) of the monitor the window is mostly on.
+        Falls back to the primary monitor."""
+        win = self._win32()
+        if win:
+            import ctypes
+            user32, hwnd, MonitorInfo = win
+            monitor = user32.MonitorFromWindow(hwnd, 2)  # 2 = MONITOR_DEFAULTTONEAREST
+            info    = MonitorInfo(cbSize=ctypes.sizeof(MonitorInfo))
+            if user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+                r = info.rcMonitor
+                return r.left, r.top, r.right - r.left, r.bottom - r.top
+        return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
+
+    def _move_to_rect(self, rect: tuple[int, int, int, int]) -> None:
+        """Move/resize the window via Windows itself.  Unlike geometry(), this
+        also works while Tk's -fullscreen is on."""
+        win = self._win32()
+        if win:
+            user32, hwnd, _ = win
+            x, y, w, h = rect
+            user32.SetWindowPos(hwnd, None, x, y, w, h, 0x0004 | 0x0010)  # NOZORDER | NOACTIVATE
+
+    def _enter_fullscreen(self, monitor: tuple[int, int, int, int] | None = None) -> None:
+        """Switch to borderless fullscreen on the window's current monitor.
+
+        `monitor` is an (x, y, width, height) rect from _monitor_rect(); pass
+        it when the window has already been moved off that monitor."""
+        # Read the monitor before anything moves the window
+        monitor = monitor or self._monitor_rect()
         self._fullscreen = True
         # Decided by the window's CURRENT state, not the setting: with the
         # background shown the window has a title bar, and stretching it would
         # push the button row off the bottom of the screen
         self._fs_stretched = self._transparency_on
+        # Remembered for both methods so _exit_fullscreen can restore it exactly
+        self._pre_fs_geometry = self.geometry()
         if self._fs_stretched:
             # overrideredirect conflicts with -fullscreen at the WinAPI level;
             # manually stretch the window to cover the screen instead.
-            self._pre_fs_geometry = self.geometry()
-            sw = self.winfo_screenwidth()
-            sh = self.winfo_screenheight()
-            self.geometry(f"{sw}x{sh}+0+0")
+            # Cover the window's own monitor, not always the primary one.
+            # Monitors left of / above the primary have negative coordinates;
+            # "+-1920" is valid Tk geometry, meaning x = -1920.
+            x, y, w, h = monitor
+            self.geometry(f"{w}x{h}+{x}+{y}")
         else:
             self.attributes("-fullscreen", True)
+            # Tk puts a -fullscreen window on the primary monitor; move it back
+            self.update_idletasks()
+            self._move_to_rect(monitor)
         self._btn_fs.configure(text="Windowed")
 
     def _exit_fullscreen(self) -> None:
@@ -577,10 +648,11 @@ class CountdownTimer(tk.Tk):
         if not self._fullscreen:
             return
         self._fullscreen = False
-        if self._fs_stretched:  # undo whichever method _enter_fullscreen used
-            self.geometry(getattr(self, "_pre_fs_geometry", "800x520"))
-        else:
+        if not self._fs_stretched:  # undo whichever method _enter_fullscreen used
             self.attributes("-fullscreen", False)
+        # Tk's own restore can keep the fullscreen size on monitors with
+        # display scaling, so always put back the remembered size and position
+        self.geometry(getattr(self, "_pre_fs_geometry", "800x520"))
         self._btn_fs.configure(text="Fullscreen")
 
     # ── Time's Up ─────────────────────────────────────────────────────────────
@@ -647,13 +719,17 @@ class CountdownTimer(tk.Tk):
         # The two modes go fullscreen in different ways, so leave fullscreen,
         # switch mode, then re-enter it using the method that suits the new mode
         was_fullscreen = self._fullscreen
+        # Note the monitor BEFORE leaving fullscreen: leaving restores the
+        # pre-fullscreen position, which may be on a different monitor (e.g. if
+        # the window was moved with Shift+Win+Arrow while fullscreen)
+        monitor = self._monitor_rect() if was_fullscreen else None
         self._exit_fullscreen()
         if self._transparency_on:
             self._disable_transparency()
         else:
             self._enable_transparency()
         if was_fullscreen:
-            self._enter_fullscreen()
+            self._enter_fullscreen(monitor)
 
     def _disable_transparency(self) -> None:
         """Make the window solid so Shift+Win+Arrow and alt-tab work normally."""
