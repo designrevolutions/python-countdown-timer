@@ -30,6 +30,9 @@
 #       Clean launch on Windows (no console window, GUI only):
 #         pythonw timer.py
 #
+#       Clean launch on Linux (no console, terminal returned immediately):
+#         ./timer.sh
+#
 #       Pass --help to see all available options:
 #         python timer.py --help
 #
@@ -59,7 +62,8 @@
 #      python timer.py --time 20 --alarm "C:\sounds\alarm.wav"
 #
 #    Combine anything:
-#      pythonw timer.py --time 25 --top --fullscreen --bg "#000000"
+#      pythonw timer.py --time 25 --top --fullscreen --bg "#000000"   # Windows
+#      ./timer.sh     --time 25 --top --fullscreen --bg "#000000"     # Linux
 #
 #    Note: any argument not supplied falls back to the SETTINGS block below.
 #
@@ -239,9 +243,14 @@ class CountdownTimer(tk.Tk):
         self.minsize(320, 220)
 
     # ── UI construction ───────────────────────────────────────────────────────
-# Stopped here
+
     def _build_ui(self) -> None:
+
+        # +++++++++++++++++++++++++++++++
+        # Setup of countdown timer display. Start
         # Timer display — expands to fill all available vertical space
+
+        # Setup the outer canvas frame, which contains the countdown timer - the buttons below are inside another object.
         self._canvas = tk.Frame(self, bg=BACKGROUND_COLOR)
         self._canvas.pack(fill=tk.BOTH, expand=True)
 
@@ -255,6 +264,11 @@ class CountdownTimer(tk.Tk):
         )
         self._label.pack(fill=tk.BOTH, expand=True)
 
+        # Setup of countdown timer display. End
+        # +++++++++++++++++++++++++++++++
+
+        # >>>>>>>>>>>>>>>>>>>>
+        # Setup of buttons start
         # Button row — sits below the timer label
         bar = tk.Frame(self, bg=BACKGROUND_COLOR) # This is the container for the control buttons. It is placed at the bottom of the window, below the timer label. The buttons themselves will be added to an inner frame within this bar, which allows them to be centered regardless of the window width.
         bar.pack(fill=tk.X, pady=(0, 14))
@@ -336,6 +350,9 @@ class CountdownTimer(tk.Tk):
             )
             self._btn_close.pack(side=tk.LEFT, padx=6)
 
+        # Setup of buttons end
+        # >>>>>>>>>>>>>>>>>>>>
+
     # ── Custom time entry ─────────────────────────────────────────────────────
 
     @staticmethod
@@ -396,7 +413,7 @@ class CountdownTimer(tk.Tk):
         return TEXT_COLOR
 
     # ── Font scaling ──────────────────────────────────────────────────────────
-
+## Stopped here
     def _on_configure(self, event: tk.Event) -> None:
         """Debounce resize events before recalculating font size."""
         if event.widget is not self:
@@ -763,7 +780,9 @@ def _apply_args(args: argparse.Namespace) -> None:
     if args.transparent:               TRANSPARENT_BACKGROUND    = True
 
 
-if __name__ == "__main__":
+# Wrapping startup in a named function gives code2flow a labelled root node so
+# generated call-graph diagrams have a clear "main" entry point to start from.
+def main() -> None:
     _apply_args(_parse_args())
 
     if _PYGAME:
@@ -771,3 +790,7 @@ if __name__ == "__main__":
 
     app = CountdownTimer()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

@@ -97,6 +97,41 @@ Boolean flags (`--top`, `--fullscreen`, `--transparent`) are either present or a
 | `R` | Reset |
 | `Escape` | Exit fullscreen |
 
+## Generating call-graph diagrams
+
+[code2flow](https://github.com/scottrogowski/code2flow) can produce a visual call-graph showing which functions call which. It requires **Graphviz** to render images.
+
+### 1. Install Graphviz
+
+| Platform | Command |
+|---|---|
+| **Linux — Debian / Ubuntu** | `sudo apt install graphviz` |
+| **Linux — Fedora / RHEL** | `sudo dnf install graphviz` |
+| **macOS** | `brew install graphviz` |
+| **Windows** | `winget install graphviz` or download from [graphviz.org](https://graphviz.org/download/) |
+
+### 2. Install code2flow
+
+```bash
+pip install code2flow
+```
+
+### 3. Generate diagrams
+
+Full call graph of the whole file:
+
+```bash
+code2flow timer.py --output diagram.png
+```
+
+Drill into a specific function (`--downstream-depth` controls how many levels deep to follow):
+
+```bash
+code2flow timer.py --output diagram.png --target-function _time_up --downstream-depth 2
+```
+
+The `main()` function at the bottom of `timer.py` exists so the diagram has a clearly labelled root node. Without it, code2flow has no named entry point to anchor to.
+
 ## Requirements
 
 - Python 3.10+
