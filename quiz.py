@@ -11,21 +11,22 @@
 #
 #  Questions file format — a flat list of objects:
 #      [
-#        {"question": "What is the capital of France?", "answer": "Paris", "marker": 20},
-#        {"question": "What is the capital of Japan?",  "answer": "Tokyo", "marker": 20}
+#        {"question": "What is the capital of France?", "answer": "Paris", "weight": 20},
+#        {"question": "What is the capital of Japan?",  "answer": "Tokyo", "weight": 20}
 #      ]
 #
 #  Answers are compared case-insensitively, ignoring leading/trailing spaces.
 #
-#  "marker" is a selection weight: a question with marker 40 is twice as likely
-#  to be picked as one with marker 20.  Every question starts at DEFAULT_MARKER.
-#    Wrong answer   → marker rises by MARKER_UP (no upper limit).
-#    Correct answer → marker drops to DEFAULT_MARKER if above it, then falls by
-#                     MARKER_DOWN, never below MIN_MARKER.  With the defaults:
+#  "weight" sets how likely a question is to be picked: one with weight 40 is
+#  twice as likely as one with weight 20.  Every question starts at DEFAULT_WEIGHT.
+#    Wrong answer   → weight rises by WEIGHT_UP (no upper limit).
+#    Correct answer → weight drops to DEFAULT_WEIGHT if above it, then falls by
+#                     WEIGHT_DOWN, never below MIN_WEIGHT.  With the defaults:
 #                     20 → 15 → 10 → 5 → 1 → 1 ...
 #    No answer      → unchanged.
-#  Markers are saved back to the file so they survive restarts.  "marker" may
-#  be omitted when adding questions; it then starts at DEFAULT_MARKER.
+#  Weights are saved back to the file so they survive restarts.  "weight" may
+#  be omitted when adding questions; it then starts at DEFAULT_WEIGHT.  Files
+#  from older versions that use "marker" instead are converted on load.
 #
 # =============================================================================
 
@@ -56,19 +57,19 @@ QUESTIONS_FILE = "questions.json"
 
 # ── Weighting ─────────────────────────────────────────────────────────────────
 
-# Marker every question starts at; leaves room below for correct answers to
+# Weight every question starts at; leaves room below for correct answers to
 # make a question progressively less likely
-DEFAULT_MARKER = 20
+DEFAULT_WEIGHT = 20
 
-# Floor for the marker.  Must stay above 0: a question at 0 would never be
+# Floor for the weight.  Must stay above 0: a question at 0 would never be
 # asked again, and random.choices() fails if every weight is 0
-MIN_MARKER = 1
+MIN_WEIGHT = 1
 
-# Amount added to a question's marker on every wrong answer (no upper limit)
-MARKER_UP = 5
+# Amount added to a question's weight on every wrong answer (no upper limit)
+WEIGHT_UP = 5
 
-# Amount subtracted on every correct answer (after capping at DEFAULT_MARKER)
-MARKER_DOWN = 5
+# Amount subtracted on every correct answer (after capping at DEFAULT_WEIGHT)
+WEIGHT_DOWN = 5
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 # Deliberately not pure black: timer.py's transparent mode turns every
@@ -97,7 +98,7 @@ def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
     gives empty lists, and individual bad entries are skipped.
 
     Returns (all_entries, questions).  `questions` holds the valid entries — the
-    very same dict objects as in `all_entries`, so updating a marker on one is
+    very same dict objects as in `all_entries`, so updating a weight on one is
     reflected in what save_questions() writes, and malformed entries are kept
     in the file untouched rather than silently deleted."""
     path = _resolve(path)
@@ -122,14 +123,19 @@ def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
         q, a = item.get("question"), item.get("answer")
         # Allow numeric answers in the JSON (e.g. "answer": 7)
         if isinstance(q, str) and isinstance(a, (str, int, float)) and q.strip() and str(a).strip():
-            # Missing or unusable marker (bool, text, zero, negative) → default;
+            # Older files called this field "marker"; rename it so the next
+            # save writes "weight" and the old key disappears
+            if "marker" in item:
+                item.setdefault("weight", item["marker"])
+                del item["marker"]
+            # Missing or unusable weight (bool, text, zero, negative) → default;
             # a small positive one (e.g. 0.5) is raised to the floor.
             # bool is excluded because it is a subclass of int in Python.
-            m = item.get("marker")
+            m = item.get("weight")
             if isinstance(m, bool) or not isinstance(m, (int, float)) or m <= 0:
-                item["marker"] = DEFAULT_MARKER
-            elif m < MIN_MARKER:
-                item["marker"] = MIN_MARKER
+                item["weight"] = DEFAULT_WEIGHT
+            elif m < MIN_WEIGHT:
+                item["weight"] = MIN_WEIGHT
             questions.append(item)
 
     skipped = len(data) - len(questions)
@@ -141,7 +147,7 @@ def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
 def save_questions(path: str, entries: list) -> None:
     """Write entries back to the questions file, one question per line so it
     stays easy to edit by hand.  Never raises; a failed save only loses the
-    latest marker change."""
+    latest weight change."""
     path = _resolve(path)
     body = ",\n".join("  " + json.dumps(item, ensure_ascii=False) for item in entries)
     text = f"[\n{body}\n]\n" if entries else "[]\n"
@@ -153,7 +159,7 @@ def save_questions(path: str, entries: list) -> None:
             f.write(text)
         os.replace(tmp, path)
     except OSError as exc:
-        _warn(f"could not save markers to {path}: {exc}")
+        _warn(f"could not save weights to {path}: {exc}")
 
 
 def _normalise(text: str) -> str:
@@ -184,7 +190,7 @@ class QuizPopup:
         self.timeout_s   = timeout_s
         self.feedback_s  = feedback_s
         self._questions_file = questions_file
-        # Loaded once, up front; only rewritten when a marker changes
+        # Loaded once, up front; only rewritten when a weight changes
         self._entries, self._questions = load_questions(questions_file)
         self._current: dict | None = None  # question being asked
 
@@ -307,9 +313,9 @@ class QuizPopup:
             return
 
         # Avoid asking the same question twice in a row when there's a choice,
-        # then pick with probability proportional to each question's marker
+        # then pick with probability proportional to each question's weight
         choices = [q for q in self._questions if q is not self._current] or self._questions
-        self._current = random.choices(choices, weights=[q["marker"] for q in choices])[0]
+        self._current = random.choices(choices, weights=[q["weight"] for q in choices])[0]
 
         self._question.configure(text=self._current["question"].strip())
         self._entry.delete(0, tk.END)
@@ -338,14 +344,14 @@ class QuizPopup:
             # A question that had been missed is first brought back to the
             # default, so one correct answer treats it like any other question
             # answered correctly once; repeated correct answers keep lowering it
-            marker = min(self._current["marker"], DEFAULT_MARKER) - MARKER_DOWN
-            self._current["marker"] = max(MIN_MARKER, marker)
+            weight = min(self._current["weight"], DEFAULT_WEIGHT) - WEIGHT_DOWN
+            self._current["weight"] = max(MIN_WEIGHT, weight)
             self._result.configure(text="Well done!")
             self._flash(lambda on: self._result.configure(fg=CORRECT_COLOR if on else POPUP_BG))
         else:
             # Grows on every wrong answer, so repeatedly missed questions keep
             # coming up more often until they are answered correctly
-            self._current["marker"] += MARKER_UP
+            self._current["weight"] += WEIGHT_UP
             self._result.configure(text=f"Not quite. The answer is: {answer}", fg=WRONG_COLOR)
         self._result.pack()
         save_questions(self._questions_file, self._entries)
