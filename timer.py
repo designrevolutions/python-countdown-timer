@@ -152,7 +152,7 @@ WARNING_THRESHOLD_SECONDS = 120
 #   macOS   — uses the -transparent attribute; the OS handles compositing.
 #   Linux   — requires a compositing window manager (e.g. Picom).  If the WM
 #             does not support it the setting is silently ignored.
-TRANSPARENT_BACKGROUND = False
+TRANSPARENT_BACKGROUND = True
 
 # ── Alarm ─────────────────────────────────────────────────────────────────────
 
@@ -179,7 +179,7 @@ BUTTON_FONT_SIZE = 14
 ALWAYS_ON_TOP = False
 
 # Start in fullscreen immediately on launch
-START_FULLSCREEN = True
+START_FULLSCREEN = False
 
 # ── Quiz pop-up (see quiz.py) ────────────────────────────────────────────────
 

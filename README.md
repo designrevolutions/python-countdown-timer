@@ -63,7 +63,6 @@ Open `timer.py` and edit the `SETTINGS` block near the top. Every option is comm
 | `ALARM_DURATION_SECONDS` | `3` | How long to play the alarm file |
 | `BUTTON_FONT_SIZE` | `14` | Size of the control buttons |
 | `ALWAYS_ON_TOP` | `False` | Float the window above everything else |
-| `START_FULLSCREEN` | `True` | Open in fullscreen (Esc returns to a window) |
 | `QUIZ_AUTO_START` | `True` | Pop up quiz questions automatically |
 | `QUIZ_INTERVAL_SECONDS` | `300` | Length of each quiz window; one question appears at a random moment within it |
 | `QUIZ_TIMEOUT_SECONDS` | `30` | Unanswered questions are dismissed after this long |
