@@ -18,6 +18,19 @@ Connect to calendar and have you busy when the timer is counting down.
 
 CRAZY idea: you start off with a morning scene, this changes to night time - when the moon is up fully and visible, you get the alarm go off. The picture changes and transitions and moves slightly (slightly - so not to disturb the person working).
 
+Have timers go off every 5 min or 2 min a chime sound
+Have puzzle solving things come up every 10 min and dissapear within 30 seconds if not interacted with 
+Multiple choice capital questions - or other things
+ChatGPT give content - so you can study for medical exam - ChatGPT gives JSON file
+
+Play a movie (for 30 seconds)
+
+Have a transaparent char appear
+
+Shooting stars every 30 seconds (explain why this is needed + get ChatGPT to give other reasons)
+
+Have a changing scene - that goes from morning to dusk - the picture transitions - add some sort of filter where you can apply to any images and add stars om top of with a moon.
+
 
 DISTRIBUTION
 ------------
