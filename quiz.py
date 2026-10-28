@@ -21,7 +21,8 @@
 #
 #  "weight" sets how likely a question is to be picked: one with weight 40 is
 #  twice as likely as one with weight 20.  Every question starts at DEFAULT_WEIGHT.
-#    Wrong answer   → weight rises by WEIGHT_UP (no upper limit).
+#    Wrong answer   → weight rises by WEIGHT_UP (no upper limit).  Submitting
+#                     an empty box reveals the answer and counts as wrong.
 #    Correct answer → weight drops to DEFAULT_WEIGHT if above it, then falls by
 #                     WEIGHT_DOWN, never below MIN_WEIGHT.  With the defaults:
 #                     20 → 15 → 10 → 5 → 1 → 1 ...
@@ -359,7 +360,7 @@ class QuizPopup:
 
     def _submit_answer(self) -> None:
         given = self._entry.get()
-        if self._current is None or not given.strip():
+        if self._current is None:
             return
         self._cancel("_timeout_id", "_flash_id")
         self._attention(True)  # in case the attention flash was mid-cycle
@@ -385,7 +386,8 @@ class QuizPopup:
             # Grows on every wrong answer, so repeatedly missed questions keep
             # coming up more often until they are answered correctly
             self._current["weight"] += WEIGHT_UP
-            self._result.configure(text=f"Not quite. The answer is: {answer}", fg=WRONG_COLOR)
+            prefix = "Not quite. " if given.strip() else ""
+            self._result.configure(text=f"{prefix}The answer is: {answer}", fg=WRONG_COLOR)
         self._result.pack()
         save_questions(self._questions_file, self._entries)
         self._feedback_id = self._frame.after(int(self.feedback_s * 1000), self._hide)
