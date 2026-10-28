@@ -15,6 +15,7 @@ This one does what I actually need: big digits that fill the window, proper full
 - Always-on-top mode
 - All configuration in a single `SETTINGS` block at the top of `timer.py`
 - Command-line arguments to override any setting without editing the file
+- Quiz pop-up: a random question from `questions.json` appears inside the window once every 5 minutes (see below)
 
 ## Setup
 
@@ -54,6 +55,10 @@ Open `timer.py` and edit the `SETTINGS` block near the top. Every option is comm
 | `ALARM_DURATION_SECONDS` | `3` | How long to play the alarm file |
 | `BUTTON_FONT_SIZE` | `14` | Size of the control buttons |
 | `ALWAYS_ON_TOP` | `False` | Float the window above everything else |
+| `QUIZ_AUTO_START` | `True` | Pop up quiz questions automatically |
+| `QUIZ_INTERVAL_SECONDS` | `300` | Length of each quiz window; one question appears at a random moment within it |
+| `QUIZ_TIMEOUT_SECONDS` | `30` | Unanswered questions are dismissed after this long |
+| `QUIZ_QUESTIONS_FILE` | `"questions.json"` | Questions file, relative to the project folder |
 
 ## Command-line usage
 
@@ -88,6 +93,21 @@ py timer.py --help                          # full reference
 | `--transparent` | | Transparent background |
 
 Boolean flags (`--top`, `--fullscreen`, `--transparent`) are either present or absent — no `=True` needed.
+
+## Quiz pop-up
+
+Once in every 5-minute window, at a random moment, a question flashes up over the timer digits. Type an answer and press Submit (or Enter): a correct answer gets a flashing "Well done!", a wrong one shows the right answer. Unanswered questions disappear after 30 seconds. The **?** button shows a question immediately (replacing any question already on screen) and restarts the 5-minute schedule from that moment.
+
+Questions live in `questions.json`, a flat list you can extend:
+
+```json
+[
+  {"question": "What is the capital of France?", "answer": "Paris"},
+  {"question": "What is the capital of Japan?", "answer": "Tokyo"}
+]
+```
+
+Answers are matched case-insensitively, ignoring surrounding spaces. A missing or malformed file just disables the quiz; it never stops the timer. The quiz code lives in `quiz.py` and can be tried on its own: `python quiz.py --interval 20 --timeout 10`.
 
 ## Keyboard shortcuts
 

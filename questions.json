@@ -1,0 +1,12 @@
+[
+  {"question": "What is the capital of France?", "answer": "Paris"},
+  {"question": "What is the capital of Japan?", "answer": "Tokyo"},
+  {"question": "What is the capital of Italy?", "answer": "Rome"},
+  {"question": "What is the capital of Germany?", "answer": "Berlin"},
+  {"question": "What is the capital of Spain?", "answer": "Madrid"},
+  {"question": "What is the capital of Canada?", "answer": "Ottawa"},
+  {"question": "What is the capital of Australia?", "answer": "Canberra"},
+  {"question": "What is the capital of Egypt?", "answer": "Cairo"},
+  {"question": "How many days are there in a leap year?", "answer": "366"},
+  {"question": "What is the largest planet in our solar system?", "answer": "Jupiter"}
+]

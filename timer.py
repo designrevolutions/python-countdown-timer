@@ -91,6 +91,8 @@ import threading
 import tkinter as tk
 from tkinter import font as tkfont
 
+import quiz
+
 # ── Optional audio back-ends (soft dependencies) ─────────────────────────────
 try:
     import pygame as _pygame
@@ -179,6 +181,21 @@ ALWAYS_ON_TOP = False
 # Start in fullscreen immediately on launch
 START_FULLSCREEN = False
 
+# ── Quiz pop-up (see quiz.py) ────────────────────────────────────────────────
+
+# Pop up a question automatically once per interval.  The "?" button works
+# either way.
+QUIZ_AUTO_START = True
+
+# Length of each quiz window; a question appears at a random moment within it
+QUIZ_INTERVAL_SECONDS = 5 * 60
+
+# Seconds to answer before the question is dismissed automatically
+QUIZ_TIMEOUT_SECONDS = 30
+
+# JSON list of {"question": ..., "answer": ...}; relative to this folder
+QUIZ_QUESTIONS_FILE = "questions.json"
+
 # =============================================================================
 
 
@@ -230,6 +247,9 @@ class CountdownTimer(tk.Tk):
 
         self._refresh_label()
 
+        if QUIZ_AUTO_START:
+            self._quiz.start()
+
         if START_FULLSCREEN:
             self.after(200, self._enter_fullscreen)
 
@@ -263,6 +283,15 @@ class CountdownTimer(tk.Tk):
             anchor="center",
         )
         self._label.pack(fill=tk.BOTH, expand=True)
+
+        # Quiz panel is drawn over the digits inside this same frame (hidden until needed)
+        self._quiz = quiz.QuizPopup(
+            self._canvas,
+            questions_file=QUIZ_QUESTIONS_FILE,
+            interval_s=QUIZ_INTERVAL_SECONDS,
+            timeout_s=QUIZ_TIMEOUT_SECONDS,
+            font_family=FONT_FAMILY,
+        )
 
         # Setup of countdown timer display. End
         # +++++++++++++++++++++++++++++++
@@ -323,7 +352,11 @@ class CountdownTimer(tk.Tk):
         self._btn_start = tk.Button(self._menu_items, text="Start",      command=self._toggle_pause,      **_btn_kw)
         self._btn_reset = tk.Button(self._menu_items, text="Reset",      command=self._reset,             **_btn_kw)
 
-        for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset):
+        # "?" shows a quiz question now and restarts the quiz schedule
+        self._btn_quiz  = tk.Button(self._menu_items, text="?", command=self._quiz.show_now,
+                                    **{**_btn_kw, "padx": 12})
+
+        for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset, self._btn_quiz):
             btn.pack(side=tk.LEFT, padx=6)
 
         # Extra buttons only present when transparent mode is active on Windows,
@@ -391,9 +424,9 @@ class CountdownTimer(tk.Tk):
 
     def _shortcut(self, action):
         """Wrap a keyboard-shortcut action so it is ignored while typing in the
-        time box (otherwise pressing Space or R there would pause/reset the timer)."""
+        time box or quiz answer box (otherwise Space or R there would pause/reset the timer)."""
         def handler(_event):
-            if self.focus_get() is not self._time_entry:
+            if not isinstance(self.focus_get(), tk.Entry):
                 action()
         return handler
 
@@ -591,7 +624,7 @@ class CountdownTimer(tk.Tk):
             self.wm_attributes("-transparent", True)
             for widget in (self, self._canvas, self._label, self._bar, self._inner, self._menu_items):
                 widget.configure(bg="systemTransparent")
-            for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset, self._btn_hide):
+            for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset, self._btn_quiz, self._btn_hide):
                 btn.configure(bg="systemTransparent")
         # Linux: silently skipped; user must configure their compositing WM
         # (e.g. add `blur-background = true;` to picom.conf).
