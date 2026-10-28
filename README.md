@@ -58,11 +58,13 @@ Open `timer.py` and edit the `SETTINGS` block near the top. Every option is comm
 | `BACKGROUND_COLOR` | `"#000000"` | Window background |
 | `WARNING_COLOR` | `"#FF4444"` | Digit colour in the final countdown |
 | `WARNING_THRESHOLD_SECONDS` | `60` | When the warning colour activates |
-| `TRANSPARENT_BACKGROUND` | `False` | See-through window background |
+| `TRANSPARENT_BACKGROUND` | `True` | See-through window background |
+| `START_WITH_BACKGROUND` | `True` | Windows, with transparency on: start solid; the Hide BG button switches to see-through |
 | `ALARM_SOUND_FILE` | `""` | Path to a `.wav` file; leave empty for system beep |
 | `ALARM_DURATION_SECONDS` | `3` | How long to play the alarm file |
 | `BUTTON_FONT_SIZE` | `14` | Size of the control buttons |
 | `ALWAYS_ON_TOP` | `False` | Float the window above everything else |
+| `START_FULLSCREEN` | `True` | Open in fullscreen (Esc returns to a window) |
 | `QUIZ_AUTO_START` | `True` | Pop up quiz questions automatically |
 | `QUIZ_INTERVAL_SECONDS` | `300` | Length of each quiz window; one question appears at a random moment within it |
 | `QUIZ_TIMEOUT_SECONDS` | `30` | Unanswered questions are dismissed after this long |

@@ -154,6 +154,11 @@ WARNING_THRESHOLD_SECONDS = 120
 #             does not support it the setting is silently ignored.
 TRANSPARENT_BACKGROUND = True
 
+# Windows only, when TRANSPARENT_BACKGROUND is True: start with the background
+# shown (solid window).  The Show BG / Hide BG and ✕ buttons are still there,
+# so transparency is one click away.
+START_WITH_BACKGROUND = True
+
 # ── Alarm ─────────────────────────────────────────────────────────────────────
 
 # Path to an audio file played when the countdown reaches zero.
@@ -179,7 +184,7 @@ BUTTON_FONT_SIZE = 14
 ALWAYS_ON_TOP = False
 
 # Start in fullscreen immediately on launch
-START_FULLSCREEN = False
+START_FULLSCREEN = True
 
 # ── Quiz pop-up (see quiz.py) ────────────────────────────────────────────────
 
@@ -222,6 +227,7 @@ class CountdownTimer(tk.Tk):
         self._flash_on        = False
         self._transparency_on = False  # toggled by _apply_transparency / _toggle_bg
         self._menu_visible    = True   # toggled by the Hide/Show button
+        self._fs_stretched    = False  # True if fullscreen was done by stretching (see _enter_fullscreen)
 
         # Wall-clock anchors used for drift-free timing
         self._anchor_mono:  float = 0.0  # time.monotonic() when (re)started
@@ -238,6 +244,10 @@ class CountdownTimer(tk.Tk):
 
         if TRANSPARENT_BACKGROUND:
             self._apply_transparency() # This fn is there to set up the window transparency based on the TRANSPARENT_BACKGROUND setting and the platform. It uses different methods for Windows, macOS, and Linux.
+            # Transparent mode is set up first so its extra buttons exist, then
+            # the background is switched on, exactly as clicking Show BG would
+            if START_WITH_BACKGROUND and platform.system() == "Windows":
+                self._disable_transparency()
 
         self.bind("<Configure>", self._on_configure)
         self.bind("<Escape>",    lambda _e: self._exit_fullscreen())
@@ -547,7 +557,11 @@ class CountdownTimer(tk.Tk):
     def _enter_fullscreen(self) -> None:
         """Switch to borderless fullscreen."""
         self._fullscreen = True
-        if TRANSPARENT_BACKGROUND and platform.system() == "Windows":
+        # Decided by the window's CURRENT state, not the setting: with the
+        # background shown the window has a title bar, and stretching it would
+        # push the button row off the bottom of the screen
+        self._fs_stretched = self._transparency_on
+        if self._fs_stretched:
             # overrideredirect conflicts with -fullscreen at the WinAPI level;
             # manually stretch the window to cover the screen instead.
             self._pre_fs_geometry = self.geometry()
@@ -563,7 +577,7 @@ class CountdownTimer(tk.Tk):
         if not self._fullscreen:
             return
         self._fullscreen = False
-        if TRANSPARENT_BACKGROUND and platform.system() == "Windows":
+        if self._fs_stretched:  # undo whichever method _enter_fullscreen used
             self.geometry(getattr(self, "_pre_fs_geometry", "800x520"))
         else:
             self.attributes("-fullscreen", False)
@@ -630,10 +644,16 @@ class CountdownTimer(tk.Tk):
         # (e.g. add `blur-background = true;` to picom.conf).
 
     def _toggle_bg(self) -> None:
+        # The two modes go fullscreen in different ways, so leave fullscreen,
+        # switch mode, then re-enter it using the method that suits the new mode
+        was_fullscreen = self._fullscreen
+        self._exit_fullscreen()
         if self._transparency_on:
             self._disable_transparency()
         else:
             self._enable_transparency()
+        if was_fullscreen:
+            self._enter_fullscreen()
 
     def _disable_transparency(self) -> None:
         """Make the window solid so Shift+Win+Arrow and alt-tab work normally."""
