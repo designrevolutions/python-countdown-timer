@@ -92,6 +92,7 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 import quiz
+import report
 
 # ── Optional audio back-ends (soft dependencies) ─────────────────────────────
 try:
@@ -228,6 +229,8 @@ class CountdownTimer(tk.Tk):
         self._transparency_on = False  # toggled by _apply_transparency / _toggle_bg
         self._menu_visible    = True   # toggled by the Hide/Show button
         self._fs_stretched    = False  # True if fullscreen was done by stretching (see _enter_fullscreen)
+        self._more_visible    = False  # toggled by the "?" button
+        self._report: report.DataReport | None = None  # open Data window, if any
 
         # Wall-clock anchors used for drift-free timing
         self._anchor_mono:  float = 0.0  # time.monotonic() when (re)started
@@ -362,8 +365,8 @@ class CountdownTimer(tk.Tk):
         self._btn_start = tk.Button(self._menu_items, text="Start",      command=self._toggle_pause,      **_btn_kw)
         self._btn_reset = tk.Button(self._menu_items, text="Reset",      command=self._reset,             **_btn_kw)
 
-        # "?" shows a quiz question now and restarts the quiz schedule
-        self._btn_quiz  = tk.Button(self._menu_items, text="?", command=self._quiz.show_now,
+        # "?" opens / closes the extra menu row above this one
+        self._btn_quiz  = tk.Button(self._menu_items, text="?", command=self._toggle_more_menu,
                                     **{**_btn_kw, "padx": 12})
 
         for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset, self._btn_quiz):
@@ -392,6 +395,17 @@ class CountdownTimer(tk.Tk):
                 **{**_btn_kw, "padx": 12, "fg": "#ff6b6b"},
             )
             self._btn_close.pack(side=tk.LEFT, padx=6)
+
+        # Extra menu row, packed above the main row only while "?" has it open.
+        # Holds the less-used options; add new ones to the tuple below.
+        self._more_menu = tk.Frame(bar, bg=BACKGROUND_COLOR)
+        self._more_buttons = (
+            tk.Button(self._more_menu, text="Data", command=self._show_data_report, **_btn_kw),
+            # "Ask now" shows a quiz question now and restarts the quiz schedule
+            tk.Button(self._more_menu, text="Ask now", command=self._quiz.show_now, **_btn_kw),
+        )
+        for btn in self._more_buttons:
+            btn.pack(side=tk.LEFT, padx=6)
 
         # Setup of buttons end
         # >>>>>>>>>>>>>>>>>>>>
@@ -424,6 +438,9 @@ class CountdownTimer(tk.Tk):
         """Collapse or restore the whole menu except the Hide/Show and ✕ buttons."""
         if self._menu_visible:
             self._menu_items.pack_forget()
+            # The "?" that closes the extra row is hidden too, so close it now
+            if self._more_visible:
+                self._toggle_more_menu()
             self._btn_hide.configure(text="Show")
         else:
             # before= re-inserts the frame to the LEFT of the Hide button,
@@ -431,6 +448,28 @@ class CountdownTimer(tk.Tk):
             self._menu_items.pack(side=tk.LEFT, before=self._btn_hide)
             self._btn_hide.configure(text="Hide")
         self._menu_visible = not self._menu_visible
+
+    def _toggle_more_menu(self) -> None:
+        """Open or close the extra menu row above the main buttons."""
+        if self._more_visible:
+            self._more_menu.pack_forget()
+            self._btn_quiz.configure(bg=self._btn_quiz_bg)
+        else:
+            # before= puts the row above the main buttons
+            self._more_menu.pack(before=self._inner, pady=(0, 8))
+            # Remembered rather than hard-coded: macOS transparency changes it
+            self._btn_quiz_bg = self._btn_quiz.cget("bg")
+            self._btn_quiz.configure(bg="#505050")  # shows the row is open
+        self._more_visible = not self._more_visible
+
+    def _show_data_report(self) -> None:
+        """Open the quiz data report, or refresh and raise it if already open."""
+        if self._report is not None and self._report.winfo_exists():
+            self._report.refresh()
+            self._report.lift()
+        else:
+            self._report = report.DataReport(self, lambda: self._quiz.questions, FONT_FAMILY)
+        self._report.focus_force()
 
     def _shortcut(self, action):
         """Wrap a keyboard-shortcut action so it is ignored while typing in the
@@ -708,9 +747,10 @@ class CountdownTimer(tk.Tk):
             self.wm_attributes("-transparentcolor", BACKGROUND_COLOR)
         elif system == "Darwin": # This is for macOS, which identifies as "Darwin"
             self.wm_attributes("-transparent", True)
-            for widget in (self, self._canvas, self._label, self._bar, self._inner, self._menu_items):
+            for widget in (self, self._canvas, self._label, self._bar, self._inner, self._menu_items, self._more_menu):
                 widget.configure(bg="systemTransparent")
-            for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset, self._btn_quiz, self._btn_hide):
+            for btn in (self._btn_apply, self._btn_fs, self._btn_start, self._btn_reset, self._btn_quiz, self._btn_hide,
+                        *self._more_buttons):
                 btn.configure(bg="systemTransparent")
         # Linux: silently skipped; user must configure their compositing WM
         # (e.g. add `blur-background = true;` to picom.conf).

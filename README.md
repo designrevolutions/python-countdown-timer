@@ -16,6 +16,7 @@ This one does what I actually need: big digits that fill the window, proper full
 - All configuration in a single `SETTINGS` block at the top of `timer.py`
 - Command-line arguments to override any setting without editing the file
 - Quiz pop-up: a random question from `questions.json` appears inside the window once every 5 minutes (see below)
+- Quiz stats: every question records how often it was asked and answered right or wrong, shown under the question and in a **Data** report with a chart
 
 ## Setup
 
@@ -42,7 +43,7 @@ python timer.py
 
 No external packages are required if you're happy with the built-in system beep.
 
-**The quiz needs `questions.json`, which is not in the repository.** Only the template `questions.sample.json` is committed. Copy it to `questions.json` as shown above (copying rather than renaming keeps the template intact). `questions.json` is git-ignored because the timer rewrites it as you answer questions. Without it the timer still runs, but no questions appear and the **?** button shows "No quiz questions loaded".
+**The quiz needs `questions.json`, which is not in the repository.** Only the template `questions.sample.json` is committed. Copy it to `questions.json` as shown above (copying rather than renaming keeps the template intact). `questions.json` is git-ignored because the timer rewrites it as you answer questions. Without it the timer still runs, but no questions appear and **? → Ask now** shows "No quiz questions loaded".
 
 ## Configuration
 
@@ -106,7 +107,12 @@ Boolean flags (`--top`, `--fullscreen`, `--transparent`) are either present or a
 
 ## Quiz pop-up
 
-Once in every 5-minute window, at a random moment, a question flashes up over the timer digits. Type an answer and press Submit (or Enter): a correct answer gets a flashing "Well done!", a nearly-right one shows "Correct, but check the spelling: …" in blue (no flashing), and a wrong one shows the right answer. Unanswered questions disappear after 30 seconds. The **?** button shows a question immediately (replacing any question already on screen) and restarts the 5-minute schedule from that moment.
+Once in every 5-minute window, at a random moment, a question flashes up over the timer digits. Type an answer and press Submit (or Enter): a correct answer gets a flashing "Well done!", a nearly-right one shows "Correct, but check the spelling: …" in blue (no flashing), and a wrong one shows the right answer. Unanswered questions disappear after 30 seconds.
+
+The **?** button opens an extra menu row above the main buttons; click **?** again to close it. It holds:
+
+- **Data** — opens the [quiz data report](#quiz-stats-and-the-data-report).
+- **Ask now** — shows a question immediately (replacing any question already on screen) and restarts the 5-minute schedule from that moment.
 
 Questions live in `questions.json` (create it from `questions.sample.json`; see [Setup](#setup)), a flat list you can extend:
 
@@ -126,6 +132,34 @@ Questions live in `questions.json` (create it from `questions.sample.json`; see 
 Weights are saved back to `questions.json`, so they carry over between sessions. You can leave `weight` out when adding questions; it starts at 20. The values are set by `DEFAULT_WEIGHT`, `MIN_WEIGHT`, `WEIGHT_UP` and `WEIGHT_DOWN` at the top of `quiz.py`.
 
 A missing or malformed file just disables the quiz; it never stops the timer. The quiz code lives in `quiz.py` and can be tried on its own: `python quiz.py --interval 20 --timeout 10`.
+
+### Quiz stats and the Data report
+
+Each question in `questions.json` also records its history:
+
+```json
+{"question": "Cuba", "answer": "Havana", "weight": 20, "asked": 7, "correct": 3, "wrong": 2, "last_asked": "2026-10-29T14:03:00"}
+```
+
+| Field | Meaning |
+|---|---|
+| `asked` | Times the question popped up |
+| `correct` | Times answered correctly (close spellings count) |
+| `wrong` | Times answered wrongly (submitting an empty box counts) |
+| `last_asked` | Local date and time it last popped up |
+
+Times it timed out without an answer = `asked − correct − wrong`. You don't need to add these fields: they start at 0 and are filled in automatically, so an existing `questions.json` keeps all its questions and weights.
+
+When a question pops up, a line under it shows its weight and chance of being picked, how often it has been asked, when it was last asked, and how often it was answered right, wrong or not at all. After you answer, the line updates with the new counts.
+
+**? → Data** opens a report window with:
+
+- totals: questions, times asked, right, wrong, timed out, overall accuracy, questions never asked, and when the last question was asked
+- a donut chart of right / wrong / timed-out answers (hover a slice for its count)
+- the hardest and easiest questions, and those most likely to come up next
+- a table of every question with its weight, chance, counts, accuracy and when it was last asked; click a heading to sort (again to reverse, a third time for file order) and type in **Filter** to search
+
+**Refresh** reloads the numbers after you answer more questions. The report can also be opened on its own: `python report.py`.
 
 ### How answers are matched
 

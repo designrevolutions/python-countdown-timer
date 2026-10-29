@@ -30,6 +30,15 @@
 #  Weights are saved back to the file so they survive restarts.  "weight" may
 #  be omitted when adding questions; it then starts at DEFAULT_WEIGHT.
 #
+#  Each question also records its history, shown under the question and in
+#  report.py's data window:
+#    "asked"      → times it popped up
+#    "correct"    → times answered correctly (close spellings included)
+#    "wrong"      → times answered wrongly (an empty Submit included)
+#    "last_asked" → local date and time it last popped up
+#  Times asked but never answered (timed out) = asked - correct - wrong.  These
+#  fields are added automatically, starting at 0, so they can be left out.
+#
 # =============================================================================
 
 import argparse
@@ -40,6 +49,7 @@ import random
 import sys
 import threading
 import tkinter as tk
+from datetime import datetime
 
 from answer_check import CLOSE, CORRECT, check_answer, load_accepted
 
@@ -93,6 +103,10 @@ TEXT_COLOR    = "#ffffff"
 CORRECT_COLOR = "#44dd66"
 CLOSE_COLOR   = "#66ccff"  # right answer, misspelt
 WRONG_COLOR   = "#ff6b6b"
+STATS_COLOR   = "#9aa7b8"  # the stats line under the question
+
+# Counters every question carries (see the top of this file)
+STAT_FIELDS = ("asked", "correct", "wrong")
 
 # =============================================================================
 
@@ -166,6 +180,12 @@ def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
                 item["weight"] = DEFAULT_WEIGHT
             elif m < MIN_WEIGHT:
                 item["weight"] = MIN_WEIGHT
+            # Counters start at 0 for new questions and for every question saved
+            # before stats were recorded; unusable values are reset the same way
+            for field in STAT_FIELDS:
+                n = item.get(field)
+                if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+                    item[field] = 0
             questions.append(item)
 
     skipped = len(data) - len(questions)
@@ -177,7 +197,7 @@ def load_questions(path: str = QUESTIONS_FILE) -> tuple[list, list[dict]]:
 def save_questions(path: str, entries: list) -> None:
     """Write entries back to the questions file, one question per line so it
     stays easy to edit by hand.  Never raises; a failed save only loses the
-    latest weight change."""
+    latest weight and stats change."""
     path = _resolve(path)
     body = ",\n".join("  " + json.dumps(item, ensure_ascii=False) for item in entries)
     text = f"[\n{body}\n]\n" if entries else "[]\n"
@@ -189,7 +209,57 @@ def save_questions(path: str, entries: list) -> None:
             f.write(text)
         os.replace(tmp, path)
     except OSError as exc:
-        _warn(f"could not save weights to {path}: {exc}")
+        _warn(f"could not save to {path}: {exc}")
+
+
+# ── Stats helpers (also used by report.py) ────────────────────────────────────
+
+
+def unanswered(q: dict) -> int:
+    """Times the question was asked but timed out without an answer."""
+    return max(0, q["asked"] - q["correct"] - q["wrong"])
+
+
+def accuracy(q: dict) -> float | None:
+    """Share of answers that were correct (0–1), or None if never answered."""
+    answered = q["correct"] + q["wrong"]
+    return q["correct"] / answered if answered else None
+
+
+def chance(q: dict, questions: list[dict]) -> float:
+    """Probability (0–1) of this question being picked next, from the weights."""
+    total = sum(item["weight"] for item in questions)
+    return q["weight"] / total if total else 0.0
+
+
+def time_ago(stamp: str | None) -> str:
+    """Turn a saved "last_asked" timestamp into e.g. "3 days ago"."""
+    if not stamp:
+        return "never"
+    try:
+        secs = (datetime.now() - datetime.fromisoformat(stamp)).total_seconds()
+    except (TypeError, ValueError):
+        return "unknown"
+    for size, unit in ((365 * 86400, "year"), (30 * 86400, "month"), (7 * 86400, "week"),
+                       (86400, "day"), (3600, "hour"), (60, "minute")):
+        if secs >= size:
+            n = int(secs // size)
+            return f"{n} {unit}{'' if n == 1 else 's'} ago"
+    return "just now"
+
+
+def stats_summary(q: dict, questions: list[dict]) -> str:
+    """Two lines describing a question's weight and history, for the pop-up."""
+    first = f"Weight {q['weight']:g} ({chance(q, questions):.1%} chance)"
+    if not q["asked"]:
+        return f"{first}  ·  first time asked"
+    first += f"  ·  asked {q['asked']}×  ·  last asked {time_ago(q.get('last_asked'))}"
+    results = [f"Right {q['correct']}", f"wrong {q['wrong']}"]
+    if missed := unanswered(q):
+        results.append(f"timed out {missed}")
+    if (acc := accuracy(q)) is not None:
+        results.append(f"{acc:.0%} correct")
+    return first + "\n" + "  ·  ".join(results)
 
 
 class QuizPopup:
@@ -244,8 +314,13 @@ class QuizPopup:
         self._question = tk.Label(
             self._frame, font=(family, size), fg=TEXT_COLOR, bg=POPUP_BG, justify="center",
         )
+        # Weight and history of the current question
+        self._stats = tk.Label(
+            self._frame, font=(family, max(8, size - 6)), fg=STATS_COLOR, bg=POPUP_BG, justify="center",
+        )
         self._title.pack(pady=(0, 10))
-        self._question.pack(pady=(0, 14))
+        self._question.pack(pady=(0, 6))
+        self._stats.pack(pady=(0, 14))
 
         # Entry + Submit, hidden once an answer is given
         self._answer_row = tk.Frame(self._frame, bg=POPUP_BG)
@@ -274,9 +349,15 @@ class QuizPopup:
     def _on_resize(self, event: tk.Event) -> None:
         wrap = max(100, event.width - 60)
         self._question.configure(wraplength=wrap)
+        self._stats.configure(wraplength=wrap)
         self._result.configure(wraplength=wrap)
 
     # ── Public API ────────────────────────────────────────────────────────────
+
+    @property
+    def questions(self) -> list[dict]:
+        """The loaded questions, with their live weights and stats."""
+        return self._questions
 
     def start(self) -> None:
         """Begin the automatic schedule: one question per interval, indefinitely."""
@@ -334,6 +415,7 @@ class QuizPopup:
             # Only reachable via show_now(); explain instead of failing silently
             self._current = None
             self._question.configure(text="No quiz questions loaded.\nCheck the questions file.")
+            self._stats.configure(text="")
             self._answer_row.pack_forget()
             self._place()
             self._feedback_id = self._frame.after(int(self.feedback_s * 1000), self._hide)
@@ -345,6 +427,11 @@ class QuizPopup:
         self._current = random.choices(choices, weights=[q["weight"] for q in choices])[0]
 
         self._question.configure(text=self._current["question"].strip())
+        # Shows the history BEFORE this asking; refreshed once it is answered
+        self._stats.configure(text=stats_summary(self._current, self._questions))
+        self._current["asked"] += 1
+        self._current["last_asked"] = datetime.now().isoformat(timespec="seconds")
+        save_questions(self._questions_file, self._entries)
         self._entry.delete(0, tk.END)
         self._answer_row.pack()
         self._place()
@@ -377,6 +464,7 @@ class QuizPopup:
             # answered correctly once; repeated correct answers keep lowering it
             weight = min(self._current["weight"], DEFAULT_WEIGHT) - WEIGHT_DOWN
             self._current["weight"] = max(MIN_WEIGHT, weight)
+            self._current["correct"] += 1
             if verdict == CORRECT:
                 self._result.configure(text="Well done!")
                 self._flash(lambda on: self._result.configure(fg=CORRECT_COLOR if on else POPUP_BG))
@@ -386,9 +474,11 @@ class QuizPopup:
             # Grows on every wrong answer, so repeatedly missed questions keep
             # coming up more often until they are answered correctly
             self._current["weight"] += WEIGHT_UP
+            self._current["wrong"] += 1
             prefix = "Not quite. " if given.strip() else ""
             self._result.configure(text=f"{prefix}The answer is: {answer}", fg=WRONG_COLOR)
         self._result.pack()
+        self._stats.configure(text=stats_summary(self._current, self._questions))
         save_questions(self._questions_file, self._entries)
         self._feedback_id = self._frame.after(int(self.feedback_s * 1000), self._hide)
 
